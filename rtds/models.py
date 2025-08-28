@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 class TagType(Enum):
@@ -53,7 +53,7 @@ class Tag:
 
     def set(self, value, status):
         self.status = status
-        self.update_time = datetime.utcnow()
+        self.update_time = datetime.now(timezone.utc)
         if self.min_ == self.max_:
             self.value = value
         elif value < self.min_:
@@ -99,6 +99,6 @@ class TagValue:
             self.name = name
             self.type_ = type_
             self.status = status
-            self.update_time = datetime.utcnow()
+            self.update_time = datetime.now(timezone.utc)
             self.value = value
             

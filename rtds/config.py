@@ -1,9 +1,9 @@
 import os
 import multiprocessing as mp
 from pyexcel_ods3 import get_data
-from model import Tag, get_tag_type
-from script import Script
-from connector_factory import get_connector
+from models import Tag, get_tag_type
+from scripts.script import Script
+from connectors.connector_factory import get_connector
 
 def load(server=None):
     connectors = {}

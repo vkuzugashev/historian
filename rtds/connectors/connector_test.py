@@ -1,8 +1,8 @@
 import logging
 import queue
 import random as rnd
-from connector_abc import ConnectorABC
-from model import TagType, Tag, TagValue
+from connectors.connector_abc import ConnectorABC
+from models import TagType, Tag, TagValue
 
 log = logging.getLogger('ConnectorTest')
 
@@ -21,7 +21,7 @@ class ConnectorTest(ConnectorABC):
         if not self.is_read_only and self.write_queue is not None:
             while not self.write_queue.empty():
                 value = self.write_queue.get()
-                log.dbug(f'write tag: {value}')
+                log.debug(f'write tag: {value}')
         log.debug(f'write cycle processed')
 
 if __name__ == '__main__':

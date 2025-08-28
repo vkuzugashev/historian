@@ -1,10 +1,8 @@
 import json
 from datetime import datetime
-from flask import Flask, request, render_template, redirect, jsonify
-from models import db, WorkProcessUnit
+from flask import Flask, request, render_template, jsonify
+from rtds.models import db, WorkProcessUnit
 from logging.config import dictConfig
-from flask_swagger import swagger
-from flask_swagger_ui import get_swaggerui_blueprint
 from sqlalchemy import or_
 
 dictConfig({'version': 1, 'root': {'level': 'DEBUG'}})
@@ -13,73 +11,11 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///execution.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-SWAGGER_URL = '/api/docs'  # URL for exposing Swagger UI (without trailing '/')
-#API_URL = 'http://petstore.swagger.io/v2/swagger.json'  # Our API url (can of course be a local resource)
-API_URL = '/spec'  # Our API url (can of course be a local resource)
-
-@app.route('/spec')
-def spec():
-    swag = swagger(app)
-    swag['info']['version'] = '1.0'
-    swag['info']['title'] = 'Process API'
-    return jsonify(swag)
-
-
-# Call factory function to create our blueprint
-swaggerui_blueprint = get_swaggerui_blueprint(
-    SWAGGER_URL,  # Swagger UI static files will be mapped to '{SWAGGER_URL}/dist/'
-    API_URL,
-    config={  # Swagger UI config overrides
-        'app_name': "Process API application"
-    },
-    # oauth_config={  # OAuth config. See https://github.com/swagger-api/swagger-ui#oauth2-configuration .
-    #    'clientId': "your-client-id",
-    #    'clientSecret': "your-client-secret-if-required",
-    #    'realm': "your-realms",
-    #    'appName': "your-app-name",
-    #    'scopeSeparator': " ",
-    #    'additionalQueryStringParams': {'test': "hello"}
-    # }
-)
-
-app.register_blueprint(swaggerui_blueprint)
-
 # связываем приложение и экземпляр SQLAlchemy
 db.init_app(app)
 
-@app.route('/')
-def home():
-    return render_template('index.html')
-
 @app.route('/processes/<process_id>/<unit_id>/<work_order_id>', methods=['GET'])
 def process_get(process_id, unit_id, work_order_id):
-    """
-        Get process
-        ---
-        tags:
-          - process
-        parameters:
-          - name: process_id
-            in: path
-            description: Process ID
-            type: string
-            required: true
-          - name: unit_id
-            in: path
-            description: Unit ID
-            type: string
-            required: true
-          - name: work_order_id
-            in: path
-            description: Work order ID
-            type: string
-            required: true
-        responses:
-          200:
-            description: Process get success
-          404:
-            description: Process not found
-    """
     app.logger.debug(f'process_get, get process_id={process_id}, unit_id={unit_id}, work_order_id={work_order_id}')
     try:
         item = WorkProcessUnit.query.filter_by(

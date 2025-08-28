@@ -1,5 +1,5 @@
 import unittest
-from connector_modbus import ConnectorModbus;
+from connectors.connector_modbus import ConnectorModbus;
 
 class ConnectorModbusMethods(unittest.TestCase):
    

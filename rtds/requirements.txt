@@ -1,0 +1,4 @@
+pyModbusTCP
+pyexcel_ods3
+flask
+flask_sqlalchemy

@@ -2,8 +2,8 @@ import logging
 import queue
 from dataclasses import dataclass
 from pyModbusTCP.client import ModbusClient
-from connector_abc import ConnectorABC
-from model import TagType, Tag, TagValue
+from connectors.connector_abc import ConnectorABC
+from models import TagType, Tag, TagValue
 
 log = logging.getLogger('ConnectorModbus')
 

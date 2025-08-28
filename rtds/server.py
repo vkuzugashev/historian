@@ -1,5 +1,11 @@
-import logging import time import sys import multiprocessing as mp import json import config from model import Tag, TagValue import 
-storage
+import logging 
+import time 
+import sys 
+import multiprocessing as mp 
+import json 
+import config 
+from models import Tag, TagValue 
+import storage
 
 log = logging.getLogger('server')
 
@@ -53,7 +59,6 @@ def storage_run(q):
         log.error(f'storage process stoped, error: {e}')
         
 def connector_run(connector):
-    log.info(f'connector {connector.name} started')
     try:
         connector.run()
     except Exception as e:
@@ -89,9 +94,7 @@ def run():
                 connector_read(connector)
             for _, script in sorted(scripts.items()):
                 script.run()
-            time.sleep(0.1)
-            with open('cache/tags.json', mode='w') as f:
-                json.dump(tags, f)
+            time.sleep(1)
     except BaseException as e:
         log.error(f'server loop stoped, error: {e}')
 

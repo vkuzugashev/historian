@@ -1,5 +1,5 @@
 from abc import ABC
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 log = logging.getLogger('ScriptABC')
@@ -20,7 +20,7 @@ class ScriptABC(ABC):
             try:
                 self.script_object = compile(source=script, mode='exec', filename='')
                 self.is_active = is_active
-                self.last_run = datetime.utcnow()
+                self.last_run = datetime.now(timezone.utc)
             except Exception as e:
                 self.is_active = False
                 log.error(f"Script compile error, script text: '{script}', error: '{e}'")
@@ -28,9 +28,9 @@ class ScriptABC(ABC):
             raise Exception('No text script')
 
     def run(self):
-        if self.is_active and (datetime.utcnow() - self.last_run).total_seconds() > self.cycle:
+        if self.is_active and (datetime.now(timezone.utc) - self.last_run).total_seconds() > self.cycle:
             try:
-                self.last_run = datetime.utcnow()
+                self.last_run = datetime.now(timezone.utc)
                 exec(self.script_object)
                 log.debug(f'script {self.name} executed success')
             except Exception as e:

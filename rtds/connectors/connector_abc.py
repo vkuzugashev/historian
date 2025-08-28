@@ -51,11 +51,3 @@ class ConnectorABC(ABC):
             finally:
                 self.close()
 
-def get_connector(self, name, cycle, connection_string, tags, read_queue, is_read_only=True, write_queue=None):
-    return ConnectorTest(name=name, 
-                         cycle=cycle, 
-                         connection_string=connection_string, 
-                         tags=tags, 
-                         read_queue=read_queue, 
-                         is_read_only=is_read_only, 
-                         write_queue=write_queue)

@@ -1,4 +1,4 @@
-from connector_test import ConnectorTest
+from connectors.connector_test import ConnectorTest
 
 def get_connector(name, cycle, connection_string:str, tags, read_queue, is_read_only=True, write_queue=None):
     pars = connection_string.split(';')
