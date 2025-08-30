@@ -1,7 +1,10 @@
 import argparse
 from pyModbusTCP.server import ModbusServer, DataBank
 from datetime import datetime
+import logging
 
+logging.basicConfig(level='DEBUG')
+log = logging.getLogger('ModbusEmulator')
 
 class MyDataBank(DataBank):
     """A custom ModbusServerDataBank for override get_holding_registers method."""
@@ -49,6 +52,7 @@ class MyDataBank(DataBank):
 
 
 if __name__ == '__main__':
+    log.info("Starting ModbusEmilitor server...")
     # parse args
     parser = argparse.ArgumentParser()
     parser.add_argument('-H', '--host', type=str, default='localhost', help='Host (default: localhost)')
@@ -56,4 +60,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
     # init modbus server and start it
     server = ModbusServer(host=args.host, port=args.port, data_bank=MyDataBank())
+    log.info(f"ModbusEmilitor server started on {args.host}:{args.port}")
     server.start()
+    log.info("end of ModbusEmilitor server")

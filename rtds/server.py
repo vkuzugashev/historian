@@ -2,10 +2,10 @@ import logging
 import time 
 import sys 
 import multiprocessing as mp 
-import json 
 import config 
 from models import Tag, TagValue 
 import storage
+from prometheus_client import start_http_server, Counter, Summary
 
 log = logging.getLogger('server')
 
@@ -15,9 +15,14 @@ scripts = {}
 processes = {}
 store_queue = mp.Queue()    
 
+# метрики
+REQUEST_LATENCY = Summary('request_latency_seconds', 'Description of histogram')
+TAG_COUNTER = Counter('tag_counter', 'Tags count')
+CONNECTOR_COUNTER = Counter('connector_counter', 'Connectors count')
+
 def add(tag):
     if isinstance(tag, Tag):
-        tags[tag.name] = tag
+        tags[tag.name] = tag        
     else:
         log.error(f'Unsupport type: {tag}')
 
@@ -70,6 +75,13 @@ def connector_read(connector):
         value = connector.read_queue.get()
         _set(value)
     log.debug(f'connector {connector.name} read process stop')
+
+@REQUEST_LATENCY.time()
+def request_cycle():
+    for _, connector in sorted(connectors.items()):
+        connector_read(connector)
+    for _, script in sorted(scripts.items()):
+        script.run()
     
 def run():
     global connectors, tags, scripts
@@ -88,12 +100,13 @@ def run():
     time.sleep(5)
     log.info('server loop started')
 
+    # Добавить cчетчики
+    TAG_COUNTER.inc(len(tags))
+    CONNECTOR_COUNTER.inc(len(connectors))
+
     try:
         while True:
-            for _, connector in sorted(connectors.items()):
-                connector_read(connector)
-            for _, script in sorted(scripts.items()):
-                script.run()
+            request_cycle()
             time.sleep(1)
     except BaseException as e:
         log.error(f'server loop stoped, error: {e}')
@@ -105,4 +118,6 @@ def run():
 
 if __name__ == '__main__':    
     logging.basicConfig(level='INFO')
+    # Start up the server to expose the metrics.
+    start_http_server(4000)
     run()

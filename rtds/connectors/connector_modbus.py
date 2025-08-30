@@ -2,8 +2,14 @@ import logging
 import queue
 from dataclasses import dataclass
 from pyModbusTCP.client import ModbusClient
-from connectors.connector_abc import ConnectorABC
 from models import TagType, Tag, TagValue
+
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).parent.parent))
+
+from connectors.connector_abc import ConnectorABC
 
 log = logging.getLogger('ConnectorModbus')
 
@@ -34,7 +40,7 @@ class ConnectorModbus(ConnectorABC):
         except Exception as e:
             log.error(f'''
 connection_string must be:
-'connection_string: host=xx.xx.xx.xx; port=502; unit_id=1, timeout=xx; auto_open=true; auto_close=true',
+'connection_string: host=xx.xx.xx.xx; port=502; unit_id=1; timeout=xx; auto_open=true; auto_close=true',
 but got:
 {connection_string}
 ''')
@@ -101,7 +107,7 @@ but got:
         
     def read(self):
         log.debug(f'read cycle process start')
-        for key, tag in self.tags.items():
+        for key, tag in self.tags:
             result_list = self._read(tag.source)
             if result_list is not None and len(result_list) == 1:
                 value = result_list[0]
