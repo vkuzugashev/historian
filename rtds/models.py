@@ -20,6 +20,18 @@ def get_tag_type(type_:str):
         return TagType.STR
     else:
         raise Exception('Unsupport tag type')
+    
+def get_type_name(type_:TagType):
+    if type_ is TagType.BOOL:
+        return 'bool'
+    elif type_ is TagType.INT:
+        return 'int'
+    elif type_ is TagType.FLOAT:
+        return 'float'
+    elif type_ is TagType.STR:
+        return 'str'
+    else:
+        raise Exception('Unsupport tag type')    
 
 @dataclass
 class Tag:
@@ -33,8 +45,9 @@ class Tag:
     value: object = None
     is_log: bool = False
     connector_name = None
+    description: str = None
 
-    def __init__(self, name, type_, source=None, min_=None, max_=None, connector_name=None, is_log=False, value=0):
+    def __init__(self, name, type_, source=None, min_=None, max_=None, connector_name=None, is_log=False, value=0, description=None):
         self.name = name
         self.type_ = type_
         self.source = source
@@ -42,6 +55,7 @@ class Tag:
         self.max_ = max_
         self.connector_name = connector_name
         self.is_log = is_log
+        self.description = description
         if type_ == TagType.BOOL:
             self.value = bool(value)
         elif type_ == TagType.INT:
@@ -72,6 +86,18 @@ class Tag:
             default=lambda o: o.__dict__, 
             sort_keys=True,
             indent=4)
+    
+    def get_type_name(self):
+        if self.type_ is TagType.BOOL:
+            return 'bool'
+        elif self.type_ is TagType.INT:
+            return 'int'
+        elif self.type_ is TagType.FLOAT:
+            return 'float'
+        elif self.type_ is TagType.STR:
+            return 'str'
+        else:
+            raise Exception('Unsupport tag type')
     
 @dataclass
 class TagValue:

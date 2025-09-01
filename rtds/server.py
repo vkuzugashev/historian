@@ -1,6 +1,9 @@
 import logging 
+from os import path
+import os
+from pathlib import Path
+import sys
 import time 
-import sys 
 import multiprocessing as mp 
 import config 
 from models import Tag, TagValue 
@@ -85,7 +88,10 @@ def request_cycle():
     
 def run():
     global connectors, tags, scripts
-    connectors, tags, scripts = config.load(server=sys.modules[__name__])
+    
+    connectors, tags, scripts = storage.get_config(server=sys.modules[__name__])
+    log.info(f'Connectors: {len(connectors)}, Tags: {len(tags)}, Scripts: {len(scripts)}')
+    log.info(scripts)    
     p = mp.Process(target=storage_run, args=(store_queue,))
     p.start()
     processes['storage'] = p
@@ -118,6 +124,14 @@ def run():
 
 if __name__ == '__main__':    
     logging.basicConfig(level='INFO')
-    # Start up the server to expose the metrics.
+    log.info(f'Example load configuration from file (ods): server.py config.ods')
+    if len(sys.argv) > 1:
+        log.info(f'load config from file: {sys.argv[1]}')
+        configFile = os.path.join(str(Path(__name__).parent), sys.argv[1])
+        connectors, tags, scripts = config.load_from_file(server=sys.modules[__name__], configFile=configFile)
+        log.info(f'Connectors: {len(connectors)}, Tags: {len(tags)}, Scripts: {len(scripts)}')
+        storage.set_config(connectors, tags, scripts)
+
+    # Start up the server to expose the metrics.    
     start_http_server(4000)
     run()

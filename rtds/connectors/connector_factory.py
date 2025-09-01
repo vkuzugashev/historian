@@ -6,7 +6,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from connectors.connector_test import ConnectorTest
 from connectors.connector_modbus import ConnectorModbus
 
-def get_connector(name, cycle, connection_string:str, tags, read_queue, is_read_only=True, write_queue=None):
+def get_connector(name, cycle, connection_string:str, tags, read_queue, is_read_only=True, write_queue=None, description=None):
     pars = connection_string.split(';')
     par_val = pars[0].split('=')
     
@@ -20,7 +20,8 @@ def get_connector(name, cycle, connection_string:str, tags, read_queue, is_read_
                             tags=tags, 
                             read_queue=read_queue, 
                             is_read_only=is_read_only, 
-                            write_queue=write_queue)
+                            write_queue=write_queue,
+                            description=description)
     elif par_val[0].lower() == 'connector' and par_val[1].lower() == 'modbus':
         return ConnectorModbus(name=name, 
                              cycle=cycle, 
@@ -28,6 +29,7 @@ def get_connector(name, cycle, connection_string:str, tags, read_queue, is_read_
                             tags=tags, 
                             read_queue=read_queue, 
                             is_read_only=is_read_only, 
-                            write_queue=write_queue)
+                            write_queue=write_queue,
+                            description=description)
     else:
         raise Exception(f'Unsupport connector: {par_val[1]}, connection_string: {connection_string}')

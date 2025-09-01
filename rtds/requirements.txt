@@ -3,3 +3,5 @@ pyexcel_ods3
 flask
 flask_sqlalchemy
 prometheus-client
+flask_swagger
+flask_swagger_ui
