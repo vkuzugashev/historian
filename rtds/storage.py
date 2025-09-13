@@ -40,7 +40,7 @@ class Script(db.Model):
 
 @dataclass
 class Tag(db.Model):
-    id:str = db.Column(db.String(10), primary_key=True)
+    id:str = db.Column(db.String(200), primary_key=True)
     type_:str = db.Column(db.String(10), nullable=False)
     min_:float = db.Column(db.Float, nullable=False, default=0)
     max_:float = db.Column(db.Float, nullable=False, default=0)

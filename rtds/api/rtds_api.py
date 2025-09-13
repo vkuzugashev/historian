@@ -136,6 +136,20 @@ def set_config():
         error_message = err.args[0]
         return {'error': error_message}, 400
 
+@app.route('/reload', methods=['POST'])
+def reload():
+    """
+        RTDS reload
+        ---
+        tags:
+          - reload
+        responses:
+          200:
+            description: RTDS reload success
+    """
+
+    return {'status': 'OK'}
+
 @app.route('/status', methods=['GET'])
 def get_status():
     """
