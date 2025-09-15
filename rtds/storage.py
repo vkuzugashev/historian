@@ -5,7 +5,7 @@ from flask_sqlalchemy import SQLAlchemy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import logging
-from models import Tag as DTag, TagType, TagValue, get_tag_type
+from models import Tag as DTag, TagType, TagValue, get_tag_type, get_type_name
 from connectors.connector_factory import get_connector
 from scripts.script import Script as DScript
 
@@ -156,6 +156,52 @@ def get_config(server):
                 is_active=item.is_active,
                 description=item.description)
             scripts[script.name] = script
+
+    return connectors, tags, scripts
+
+def export_config():
+    log.info('loading config from db')
+    tags = {}
+    connectors = {}
+    scripts = {}
+
+    with app.app_context():
+        for item in Tag.query.all():
+            log.debug(f'get tag item: {item}')
+            tag = { 
+                    "name": item.id, 
+                    "type_": item.type_, 
+                    "connector_name": item.connector_name,
+                    "is_log": item.is_log,
+                    "max_": item.max_,
+                    "min_": item.min_, 
+                    "source": item.source,
+                    "value": item.value,
+                    "description": item.description
+                  }
+            tags[tag["name"]] = tag
+
+        for item in Connector.query.all():
+            log.debug(f'get connector item: {item}')
+            connector = {
+                "name": item.id,
+                "cycle": item.cycle,
+                "connection_string": item.connection_string,
+                "is_read_only": item.is_read_only,
+                "description": item.description
+            }
+            connectors[connector["name"]] = connector
+
+        for item in Script.query.all():
+            log.debug(f'get script item: {item}')
+            script = {
+                "name": item.id,
+                "cycle": item.cycle,
+                "script": item.script,
+                "is_active": item.is_active,
+                "description": item.description
+            }
+            scripts[script["name"]] = script
 
     return connectors, tags, scripts
 

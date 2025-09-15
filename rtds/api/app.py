@@ -2,7 +2,8 @@ import json
 from datetime import datetime
 import os
 import sys
-from flask import Flask, request, render_template, redirect, jsonify
+import tempfile
+from flask import Flask, request, render_template, redirect, jsonify, send_file
 from logging.config import dictConfig
 from flask_swagger import swagger
 from flask_swagger_ui import get_swaggerui_blueprint
@@ -30,7 +31,7 @@ SWAGGER_URL = '/api/docs'  # URL for exposing Swagger UI (without trailing '/')
 #API_URL = 'http://petstore.swagger.io/v2/swagger.json'  # Our API url (can of course be a local resource)
 API_URL = '/spec'  # Our API url (can of course be a local resource)
 
-@app.route('/spec')
+@app.route(API_URL)
 def spec():
     swag = swagger(app)
     swag['info']['version'] = '1.0'
@@ -60,11 +61,7 @@ app.register_blueprint(swaggerui_blueprint)
 # связываем приложение и экземпляр SQLAlchemy
 #db.init_app(app)
 
-@app.route('/')
-def home():
-    return render_template('index.html')
-
-@app.route('/config', methods=['GET'])
+@app.route('/api/config', methods=['GET'])
 def get_config():
     """
         Get RTDS config
@@ -79,11 +76,21 @@ def get_config():
     """
     app.logger.debug(f'get_config')
     try:
-        item = None
-        if item: 
-            return jsonify(item)
+        connectors, tags, scripts = storage.export_config()
+        # получить имя временного файла
+        config_file_path = tempfile.gettempdir() + "/config.ods"
+        config.export_to_file(connectors, tags, scripts, config_file_path)
+        if os.path.exists(config_file_path):
+            # выгрузить файл клиенту
+            if request.method == 'GET':
+                return send_file(
+                    path_or_file  = config_file_path,
+                    mimetype      ='application/vnd.oasis.opendocument.spreadsheet',
+                    as_attachment =True,
+                    download_name ='config.ods'
+                )
         else:
-            return {'error': 'Config not found'}, 400
+            return {'error': 'Fail create config'}, 400
     except Exception as err:
         app.logger.error(f'{err}')
         error_message = err.args[0]
@@ -93,7 +100,7 @@ def get_config():
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/config', methods=['POST'])
+@app.route('/api/config', methods=['POST'])
 def set_config():
     """
         Set config
@@ -136,7 +143,7 @@ def set_config():
         error_message = err.args[0]
         return {'error': error_message}, 400
 
-@app.route('/reload', methods=['POST'])
+@app.route('/api/reload', methods=['POST'])
 def reload():
     """
         RTDS reload
@@ -150,7 +157,7 @@ def reload():
 
     return {'status': 'OK'}
 
-@app.route('/status', methods=['GET'])
+@app.route('/api/status', methods=['GET'])
 def get_status():
     """
         RTDS status

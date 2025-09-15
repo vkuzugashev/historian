@@ -1,7 +1,8 @@
 import multiprocessing as mp
 import os
 from pathlib import Path
-from pyexcel_ods3 import get_data
+from typing import OrderedDict
+from pyexcel_ods3 import get_data, save_data
 from models import Tag, get_tag_type
 from scripts.script import Script
 from connectors.connector_factory import get_connector
@@ -58,7 +59,79 @@ def load_from_dict(server, data:dict):
         scripts[script.name] = script
 
     return connectors, tags, scripts
-    
+
+# экспорт в calc файл
+def export_to_file(connectors, tags, scripts, configFile: str):
+    data = OrderedDict()
+
+    _connectors = [[
+        "name", 
+        "cycle", 
+        "connection_string", 
+        "is_read_only", 
+        "description"
+    ]]
+    _tags = [[
+        "name", 
+        "type_", 
+        "connector_name", 
+        "is_log", 
+        "max_", 
+        "min_", 
+        "source", 
+        "value", 
+        "description"
+    ]]
+    _scripts = [[
+        "name", 
+        "cycle", 
+        "script", 
+        "is_active", 
+        "description"
+    ]]
+        
+    if connectors:
+        for connector in connectors.values():
+            _connectors.append([
+                connector.get("name"), 
+                connector.get("cycle"), 
+                connector.get("connection_string"), 
+                connector.get("is_read_only"), 
+                connector.get("description") or ""
+            ])
+
+        data.update({"Connectors": _connectors})
+
+    if tags:
+        for tag in tags.values():
+            _tags.append([
+                tag.get("name"), 
+                tag.get("type_"), 
+                tag.get("connector_name") or "", 
+                tag.get("is_log"), 
+                tag.get("max_"), 
+                tag.get("min_"),
+                tag.get("source") or "",
+                tag.get("value"),
+                tag.get("description") or ""
+            ])
+        
+        data.update({"Tags": _tags})
+
+    if scripts:
+        for script in scripts.values():
+            _scripts.append([
+                script.get("name"), 
+                script.get("cycle"), 
+                script.get("script"), 
+                script.get("is_active"), 
+                script.get("description") or ""
+            ])
+
+        data.update({"Scripts": _scripts})
+
+    save_data(configFile, data)
+
 if __name__ == '__main__':
     configFile = os.path.join(str(Path(__name__).parent), 'config.ods')
     connectors, tags, scripts = load_from_file(server=None, configFile=configFile)
