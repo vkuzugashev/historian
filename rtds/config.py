@@ -96,7 +96,7 @@ def export_to_file(connectors, tags, scripts, configFile: str):
                 connector.get("name"), 
                 connector.get("cycle"), 
                 connector.get("connection_string"), 
-                connector.get("is_read_only"), 
+                1 if connector.get("is_read_only") else 0, 
                 connector.get("description") or ""
             ])
 
@@ -108,7 +108,7 @@ def export_to_file(connectors, tags, scripts, configFile: str):
                 tag.get("name"), 
                 tag.get("type_"), 
                 tag.get("connector_name") or "", 
-                tag.get("is_log"), 
+                1 if tag.get("is_log") else 0, 
                 tag.get("max_"), 
                 tag.get("min_"),
                 tag.get("source") or "",
@@ -124,7 +124,7 @@ def export_to_file(connectors, tags, scripts, configFile: str):
                 script.get("name"), 
                 script.get("cycle"), 
                 script.get("script"), 
-                script.get("is_active"), 
+                1 if script.get("is_active") else 0, 
                 script.get("description") or ""
             ])
 
