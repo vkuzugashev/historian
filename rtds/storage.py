@@ -1,4 +1,5 @@
 import multiprocessing as mp
+from operator import and_
 import time
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
@@ -218,6 +219,43 @@ def set_config(connectors, tags, scripts):
     
     if scripts:
         set_scripts(scripts)
+
+# Получить историю тегов отсортированной по времени
+def get_history(start_time, size):
+    # проверим тип start_time
+    if not isinstance(start_time, datetime):
+        if start_time:
+            start_time = datetime.fromisoformat(start_time)
+        else:
+            start_time = None
+
+
+    with app.app_context():
+        if start_time:
+            query = db.session.query(History, Tag) \
+                .join(Tag, History.tag_id == Tag.id) \
+                .filter(History.tag_time > start_time) \
+                .order_by(History.tag_time.asc()).limit(size)
+
+            for history, tag in query.all():
+
+                if tag.type_ == get_type_name(TagType.BOOL):
+                    value = history.bool_value
+                elif tag.type_ == get_type_name(TagType.INT):
+                    value = history.int_value
+                elif tag.type_ == get_type_name(TagType.FLOAT):
+                    value = history.float_value
+                else:
+                    value = history.str_value
+
+                yield {
+                    "id": history.tag_id,
+                    "tm": f"{history.tag_time.isoformat()}Z", # это время в UTC
+                    "tp": tag.type_,  # Тип тега из Tag
+                    "st": history.status,
+                    "vl": value
+                }
+            
 
 def run(q):
     with app.app_context():        
