@@ -33,6 +33,17 @@ def get_type_name(type_:TagType):
     else:
         raise Exception('Unsupport tag type')    
 
+def get_tag_value(type_, bool_value, int_value, float_value, str_value):
+    if type_ == get_type_name(TagType.BOOL):
+        return bool_value
+    elif type_ == get_type_name(TagType.INT):
+        return int_value
+    elif type_ == get_type_name(TagType.FLOAT):
+        return float_value
+    else:
+        return str_value
+
+
 @dataclass
 class Tag:
     name: str = 'noname'

@@ -1,69 +1,93 @@
+import json
 import multiprocessing as mp
-from operator import and_
 import time
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
+from typing import Optional
+from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime, Text, MetaData, insert, select
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
-from models import Tag as DTag, TagType, TagValue, get_tag_type, get_type_name
+
+from models import Tag as DTag, TagType, TagValue, get_tag_type, get_tag_value
 from connectors.connector_factory import get_connector
 from scripts.script import Script as DScript
 
 log = logging.getLogger('storage')
 
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///history.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# app = Flask(__name__)
+# app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///history.db'
+# app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 batch_size = 50
 
-db = SQLAlchemy()
-db.init_app(app)
+# db = SQLAlchemy()
+# db.init_app(app)
+
+DB_URL = 'sqlite:///data/history.db'
+
+class Base(DeclarativeBase):
+    pass
+
+#@dataclass
+class Connector(Base):
+    __tablename__ = 'connectors'
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    cycle: Mapped[int] = mapped_column(Integer, default=1)
+    is_read_only: Mapped[bool]  = mapped_column(Boolean, default=False)
+    connection_string: Mapped[str] = mapped_column(String(200))
+    description: Mapped[Optional[str]] = mapped_column(String(200))
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
 
 @dataclass
-class Connector(db.Model):
-    id:str = db.Column(db.String(100), primary_key=True)
-    cycle:int = db.Column(db.Integer, nullable=False, default=1)
-    is_read_only:bool = db.Column(db.Boolean, nullable=False, default=False)
-    connection_string:str = db.Column(db.String(200), nullable=False)
-    description:str = db.Column(db.String(200), nullable=True)
-    updated_at:datetime = db.Column(db.DateTime, nullable=False)
+class Script(Base):
+    __tablename__ = 'scripts'
+    id: Mapped[str] = mapped_column(String(10), primary_key=True)
+    cycle: Mapped[int] = mapped_column(Integer, default=1)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    script: Mapped[str] = mapped_column(Text)
+    description: Mapped[Optional[str]] = mapped_column(String(200))
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
 
 @dataclass
-class Script(db.Model):
-    id:str = db.Column(db.String(10), primary_key=True)
-    cycle:int = db.Column(db.Integer, nullable=False, default=1)
-    is_active:bool = db.Column(db.Boolean, nullable=False, default=False)
-    script:str = db.Column(db.Text, nullable=False)
-    description:str = db.Column(db.String(200), nullable=True)
-    updated_at:datetime = db.Column(db.DateTime, nullable=False)
+class Tag(Base):
+    __tablename__ = 'tags'
+    id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    type_: Mapped[str] = mapped_column(String(10))
+    min_: Mapped[float] = mapped_column(Float, default=0)
+    max_: Mapped[float] = mapped_column(Float, default=0)
+    is_log: Mapped[bool] = mapped_column(Boolean, default=False)
+    connector_name: Mapped[Optional[str]] = mapped_column(String(100))
+    source: Mapped[Optional[str]] = mapped_column(String(100))
+    value: Mapped[Optional[str]] = mapped_column(String(100))
+    description: Mapped[Optional[str]] = mapped_column(String(200))
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
 
 @dataclass
-class Tag(db.Model):
-    id:str = db.Column(db.String(200), primary_key=True)
-    type_:str = db.Column(db.String(10), nullable=False)
-    min_:float = db.Column(db.Float, nullable=False, default=0)
-    max_:float = db.Column(db.Float, nullable=False, default=0)
-    is_log:bool = db.Column(db.Boolean, nullable=False, default=False)
-    connector_name:str = db.Column(db.String(100), nullable=True)
-    source:str = db.Column(db.String(100), nullable=True)
-    value:str = db.Column(db.String(100), nullable=True)
-    description:str = db.Column(db.String(200), nullable=True)
-    updated_at:datetime = db.Column(db.DateTime, nullable=False)
+class History(Base):
+    __tablename__ = 'history'
+    tag_id: Mapped[str] = mapped_column(String(10), primary_key=True)
+    tag_time: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
+    status: Mapped[int] = mapped_column(Integer)    
+    bool_value: Mapped[Optional[bool]] = mapped_column(Boolean)    
+    int_value: Mapped[Optional[int]] = mapped_column(Integer)    
+    float_value: Mapped[Optional[float]] = mapped_column(Float)    
+    str_value: Mapped[Optional[str]] = mapped_column(String(500))    
 
 @dataclass
-class History(db.Model):
-    tag_id:str = db.Column(db.String(10), primary_key=True)
-    tag_time:datetime = db.Column(db.DateTime, primary_key=True)
-    status:int = db.Column(db.Integer, nullable=False)    
-    bool_value:bool = db.Column(db.Boolean, nullable=True)    
-    int_value:int = db.Column(db.Integer, nullable=True)    
-    float_value:float = db.Column(db.Float, nullable=True)    
-    str_value:str = db.Column(db.String(500), nullable=True)    
+class Current(Base):
+    __tablename__ = 'current'
+    tag_id: Mapped[str] = mapped_column(String(10), primary_key=True)
+    tag_time: Mapped[datetime] = mapped_column(DateTime)
+    status: Mapped[int] = mapped_column(Integer)    
+    bool_value: Mapped[Optional[bool]] = mapped_column(Boolean)    
+    int_value: Mapped[Optional[int]] = mapped_column(Integer)    
+    float_value: Mapped[Optional[float]] = mapped_column(Float)    
+    str_value: Mapped[Optional[str]] = mapped_column(String(500))    
 
 def set_connectors(connectors:dict):
-    with app.app_context():        
+    engine = create_engine(DB_URL, echo=True)
+    with Session(engine) as session: 
         for item in connectors.values():
             log.debug(f'save connector item: {item}')
             connector = Connector(
@@ -74,13 +98,14 @@ def set_connectors(connectors:dict):
                 description=item.description,
                 updated_at=datetime.now(timezone.utc)
             )
+            session.add(connector)
             log.debug(f'save connector item: {connector}')
-            db.session.add(connector)
         else:
-            db.session.commit()
+            session.commit()
 
 def set_tags(tags:dict):
-    with app.app_context(): 
+    engine = create_engine(DB_URL, echo=True)
+    with Session(engine) as session: 
         for item in tags.values():
             log.debug(f'save tag item: {item}')
             connector = Tag(
@@ -95,12 +120,13 @@ def set_tags(tags:dict):
                 description=item.description,
                 updated_at=datetime.now(timezone.utc)
             )
-            db.session.add(connector)
+            session.add(connector)
         else:
-            db.session.commit()
+            session.commit()
 
 def set_scripts(scripts:dict):
-    with app.app_context(): 
+    engine = create_engine(DB_URL, echo=True)
+    with Session(engine) as session: 
         for item in scripts.values():
             log.debug(f'save script item: {item}')
             script = Script(
@@ -111,32 +137,35 @@ def set_scripts(scripts:dict):
                 description=item.description,
                 updated_at=datetime.now(timezone.utc)
             )
-            db.session.add(script)
+            session.add(script)
         else:
-            db.session.commit()
+            session.commit()
 
 def get_config(server):
+    """
+    Загрузить конфигурацию из БД
+    """
     log.info('loading config from db')
     tags = {}
     connectors = {}
     scripts = {}
 
-    with app.app_context():
-        for item in Tag.query.all():
-            log.debug(f'get tag item: {item}')
+    engine = create_engine(DB_URL, echo=True)
+    with Session(engine) as session:
+        for item in session.scalars(select(Tag)).all():
             tag = DTag(name=item.id, 
-                  type_=get_tag_type(item.type_), 
-                  connector_name=item.connector_name,
-                  is_log=item.is_log,
-                  max_=item.max_,
-                  min_=item.min_, 
-                  source=item.source,
-                  value=item.value,
-                  description=item.description)
+                    type_=get_tag_type(item.type_), 
+                    connector_name=item.connector_name,
+                    is_log=item.is_log,
+                    max_=item.max_,
+                    min_=item.min_, 
+                    source=item.source,
+                    value=item.value,
+                    description=item.description
+                    )
             tags[tag.name] = tag
 
-        for item in Connector.query.all():
-            log.debug(f'get connector item: {item}')
+        for item in session.scalars(select(Connector)).all():
             connector = get_connector(name=item.id,
                                   cycle=item.cycle,
                                   connection_string=item.connection_string,
@@ -147,8 +176,7 @@ def get_config(server):
                                   description=item.description)
             connectors[connector.name] = connector
 
-        for item in Script.query.all():
-            log.debug(f'get script item: {item}')
+        for item in session.scalars(select(Script)).all():
             script = DScript(
                 server=server,
                 name=item.id,
@@ -161,14 +189,17 @@ def get_config(server):
     return connectors, tags, scripts
 
 def export_config():
+    """
+    Экспортировать конфигурацию в файл
+    """
     log.info('loading config from db')
     tags = {}
     connectors = {}
     scripts = {}
 
-    with app.app_context():
-        for item in Tag.query.all():
-            log.debug(f'get tag item: {item}')
+    engine = create_engine(DB_URL, echo=True)
+    with Session(engine) as session:
+        for item in session.scalars(select(Tag)).all():
             tag = { 
                     "name": item.id, 
                     "type_": item.type_, 
@@ -182,7 +213,7 @@ def export_config():
                   }
             tags[tag["name"]] = tag
 
-        for item in Connector.query.all():
+        for item in session.scalars(select(Connector)).all():
             log.debug(f'get connector item: {item}')
             connector = {
                 "name": item.id,
@@ -193,7 +224,7 @@ def export_config():
             }
             connectors[connector["name"]] = connector
 
-        for item in Script.query.all():
+        for item in session.scalars(select(Script)).all():
             log.debug(f'get script item: {item}')
             script = {
                 "name": item.id,
@@ -207,10 +238,14 @@ def export_config():
     return connectors, tags, scripts
 
 def set_config(connectors, tags, scripts):
-    with app.app_context(): 
-        db.drop_all()
-        db.create_all()
-    
+    """
+    Сохранить конфигурацию в БД
+    """
+    engine = create_engine(DB_URL, echo=True)
+
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)    
+
     if connectors:
         set_connectors(connectors)
     
@@ -220,87 +255,157 @@ def set_config(connectors, tags, scripts):
     if scripts:
         set_scripts(scripts)
 
-# Получить историю тегов отсортированной по времени
 def get_history(start_time, size):
+    """
+    Получить историю тегов отсортированной по времени
+    """
     # проверим тип start_time
     if not isinstance(start_time, datetime):
         if start_time:
             start_time = datetime.fromisoformat(start_time)
         else:
-            start_time = None
+            start_time = datetime.now(timezone.utc) - timedelta(days=1)
 
-
-    with app.app_context():
+    engine = create_engine(DB_URL, echo=True)
+    with Session(engine) as session:
         if start_time:
-            query = db.session.query(History, Tag) \
-                .join(Tag, History.tag_id == Tag.id) \
-                .filter(History.tag_time > start_time) \
+            query = (
+                select(History, Tag)
+                .join(Tag, History.tag_id == Tag.id)
+                .filter(History.tag_time > start_time)
                 .order_by(History.tag_time.asc()).limit(size)
-
-            for history, tag in query.all():
-
-                if tag.type_ == get_type_name(TagType.BOOL):
-                    value = history.bool_value
-                elif tag.type_ == get_type_name(TagType.INT):
-                    value = history.int_value
-                elif tag.type_ == get_type_name(TagType.FLOAT):
-                    value = history.float_value
-                else:
-                    value = history.str_value
-
+            )
+            for row in session.execute(query).all():
                 yield {
-                    "id": history.tag_id,
-                    "tm": f"{history.tag_time.isoformat()}Z", # это время в UTC
-                    "tp": tag.type_,  # Тип тега из Tag
-                    "st": history.status,
-                    "vl": value
+                    "id": row.History.tag_id,
+                    "tm": f"{row.History.tag_time.isoformat()}Z", # это время в UTC
+                    "tp": row.Tag.type_,  # Тип тега из Tag
+                    "st": row.History.status,
+                    "vl": get_tag_value(
+                        type_ = row.Tag.type_, 
+                        bool_value = row.History.bool_value,
+                        int_value = row.History.int_value,
+                        float_value = row.History.float_value,
+                        str_value = row.History.str_value
+                    )
                 }
-            
+
+
+# получить текущие значения тегов            
+def get_current():
+    """
+    Получить текущие значения тегов
+    """
+    engine = create_engine(DB_URL, echo=True)
+    with Session(engine) as session:
+        query = (
+            select(Current, Tag)
+            .join(Tag, Current.tag_id == Tag.id)
+        )
+        for row in session.execute(query).all():
+            yield {
+                "id": row.Current.tag_id,
+                "tm": f"{row.Current.tag_time.isoformat()}Z", # это время в UTC
+                "tp": row.Tag.type_,  # Тип тега из Tag
+                "st": row.Current.status,
+                "vl": get_tag_value(
+                    type_ = row.Tag.type_, 
+                    bool_value = row.Current.bool_value,
+                    int_value = row.Current.int_value,
+                    float_value = row.Current.float_value,
+                    str_value = row.Current.str_value
+                )
+            }
 
 def run(q):
-    with app.app_context():        
-        batch = []
+    batch = []
+    currents = []
 
-        while True:
+    while True:
             
-            # получить значение из очереди если есть
-            if q.empty():
-                time.sleep(0.01)
-                continue
+        # получить значение из очереди если есть
+        if q.empty():
+            time.sleep(0.01)
+            continue
 
-            value = q.get()
+        value = q.get()
             
-            if isinstance(value, TagValue):
-                try:
-                    history = History(
-                        tag_id=value.name,
-                        tag_time=value.update_time,
-                        status=value.status,
-                        bool_value = value.value if value.type_==TagType.BOOL else None,
-                        int_value = value.value if value.type_==TagType.INT else None,
-                        float_value = value.value if value.type_==TagType.FLOAT else None,
-                        str_value = ','.join(value.value) if value.type_==TagType.STR else None                
-                    )                    
-                    batch.append(history)                    
-                    if len(batch) >= batch_size or q.empty():
-                        batch_write(batch)
-                        batch = []
-                except Exception as e:
-                    log.error(f'fail store value: {value}, error: {e}')
-            else:
-                log.warning(f'Unsupport type: {value}')
+        if isinstance(value, TagValue):
+            try:
+                history = History(
+                    tag_id=value.name,
+                    tag_time=value.update_time,
+                    status=value.status,
+                    bool_value = value.value if value.type_==TagType.BOOL else None,
+                    int_value = value.value if value.type_==TagType.INT else None,
+                    float_value = value.value if value.type_==TagType.FLOAT else None,
+                    str_value = ','.join(value.value) if value.type_==TagType.STR else None                
+                )                    
+                batch.append(history)                    
+                    
+                current = {
+                    "tag_id": value.name,
+                    "tag_time": value.update_time,
+                    "status": value.status,
+                    "bool_value": value.value if value.type_==TagType.BOOL else None,
+                    "int_value": value.value if value.type_==TagType.INT else None,
+                    "float_value": value.value if value.type_==TagType.FLOAT else None,
+                    "str_value": ','.join(value.value) if value.type_==TagType.STR else None
+                }
+                
+                currents.append(current)
+
+                if len(batch) >= batch_size or q.empty():
+                    batch_write(batch)                        
+                    batch = []
+                
+                if len(currents) >= batch_size or q.empty():
+                    currents_write(currents)                        
+                    currents = []
+
+            except Exception as e:
+                log.error(f'fail store value: {value}, error: {e}')
+
+        else:
+            log.warning(f'Unsupport type: {value}')
 
 def batch_write(batch):
-    try:
-        db.session.bulk_save_objects(batch)
-        db.session.commit()
-        log.debug(f'success stored batch: {len(batch)}')
-    except Exception as e:
-        log.error(f'fail store batch: {len(batch)}, error: {e}')
+    engine = create_engine(DB_URL, echo=True)
+    with Session(engine) as session:
+        try:
+            session.bulk_save_objects(batch)
+            session.commit()
+            log.debug(f'success stored batch: {len(batch)}')
+        except Exception as e:
+            log.error(f'fail store batch: {len(batch)}, error: {e}')
+
+def currents_write(items):
+    engine = create_engine(DB_URL, echo=True)
+    with Session(engine) as session:
+        try:
+            #Атомарный UPSERT для всех записей
+            stmt = sqlite_insert(Current).values(items)
+            on_conflict_stmt = stmt.on_conflict_do_update(
+                    index_elements=[Current.tag_id],
+                    set_={
+                        "tag_time": stmt.excluded.tag_time,
+                        "status": stmt.excluded.status,
+                        "bool_value": stmt.excluded.bool_value,
+                        "int_value": stmt.excluded.int_value,
+                        "float_value": stmt.excluded.float_value,
+                        "str_value": stmt.excluded.str_value
+                    }
+                )
+            
+            session.execute(on_conflict_stmt)
+            session.commit()
+
+            log.debug(f'success stored current: {len(items)}')        
+        except Exception as e:
+            log.error(f'fail store current: {len(items)}, error: {e}')
 
 if __name__ == '__main__':
     logging.basicConfig(level='INFO')
-    with app.app_context():
-        db.Model
-        db.drop_all()
-        db.create_all()
+    engine = create_engine(DB_URL, echo=True)
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)

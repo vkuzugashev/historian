@@ -90,8 +90,8 @@ def run():
     global connectors, tags, scripts
     
     connectors, tags, scripts = storage.get_config(server=sys.modules[__name__])
-    log.info(f'Connectors: {len(connectors)}, Tags: {len(tags)}, Scripts: {len(scripts)}')
-    log.info(scripts)    
+    log.info(f'Loaded config, connectors: {len(connectors)}, tags: {len(tags)}, scripts: {len(scripts)}')
+
     p = mp.Process(target=storage_run, args=(store_queue,))
     p.start()
     processes['storage'] = p
@@ -132,6 +132,7 @@ if __name__ == '__main__':
         log.info(f'Connectors: {len(connectors)}, Tags: {len(tags)}, Scripts: {len(scripts)}')
         storage.set_config(connectors, tags, scripts)
 
+    log.info(storage.DB_URL)
     # Start up the server to expose the metrics.    
     start_http_server(4000)
     run()

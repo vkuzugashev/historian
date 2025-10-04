@@ -179,7 +179,7 @@ def get_history(start_time, size):
         Get RTDS history tag values
         ---
         tags:
-          - history
+          - tag values
         parameters:
           - name: start_time
             in: path
@@ -215,5 +215,40 @@ def get_history(start_time, size):
         error_message = err.args[0]
         return {'error': error_message}, 400
 
+@app.route('/api/current', methods=['GET'])
+def get_current():
+    """
+        Get RTDS current tag values
+        ---
+        tags:
+          - tag values
+        responses:
+          200:
+            description: get success
+          404:
+            description: not found
+    """
+    
+    app.logger.debug(f'get_current values')
+
+    try:
+        def generator():
+          first = True
+          yield "["
+          for item in storage.get_current():
+            if first:        
+              first = False
+            else:
+              yield ","
+            yield json.dumps(item)
+          yield "]"
+        return Response(generator(), mimetype='application/json')
+        
+    except Exception as err:
+        app.logger.error(f'{err}')
+        error_message = err.args[0]
+        return {'error': error_message}, 400
+
 if __name__ == '__main__':
-    app.run(port=5001)
+  storage.DB_URL = 'sqlite:///../data/history.db'
+  app.run(port=5001)
