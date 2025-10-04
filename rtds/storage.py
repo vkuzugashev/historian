@@ -29,7 +29,6 @@ DB_URL = 'sqlite:///data/history.db'
 class Base(DeclarativeBase):
     pass
 
-#@dataclass
 class Connector(Base):
     __tablename__ = 'connectors'
     id: Mapped[str] = mapped_column(String(100), primary_key=True)
@@ -39,7 +38,6 @@ class Connector(Base):
     description: Mapped[Optional[str]] = mapped_column(String(200))
     updated_at: Mapped[datetime] = mapped_column(DateTime)
 
-@dataclass
 class Script(Base):
     __tablename__ = 'scripts'
     id: Mapped[str] = mapped_column(String(10), primary_key=True)
@@ -49,7 +47,6 @@ class Script(Base):
     description: Mapped[Optional[str]] = mapped_column(String(200))
     updated_at: Mapped[datetime] = mapped_column(DateTime)
 
-@dataclass
 class Tag(Base):
     __tablename__ = 'tags'
     id: Mapped[str] = mapped_column(String(200), primary_key=True)
@@ -63,7 +60,6 @@ class Tag(Base):
     description: Mapped[Optional[str]] = mapped_column(String(200))
     updated_at: Mapped[datetime] = mapped_column(DateTime)
 
-@dataclass
 class History(Base):
     __tablename__ = 'history'
     tag_id: Mapped[str] = mapped_column(String(10), primary_key=True)
@@ -74,7 +70,6 @@ class History(Base):
     float_value: Mapped[Optional[float]] = mapped_column(Float)    
     str_value: Mapped[Optional[str]] = mapped_column(String(500))    
 
-@dataclass
 class Current(Base):
     __tablename__ = 'current'
     tag_id: Mapped[str] = mapped_column(String(10), primary_key=True)
@@ -84,6 +79,13 @@ class Current(Base):
     int_value: Mapped[Optional[int]] = mapped_column(Integer)    
     float_value: Mapped[Optional[float]] = mapped_column(Float)    
     str_value: Mapped[Optional[str]] = mapped_column(String(500))    
+
+class State(Base):
+    __tablename__ = 'state'
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+    status: Mapped[Optional[str]] = mapped_column(String(100))    
+    description: Mapped[Optional[str]] = mapped_column(String(500))    
 
 def set_connectors(connectors:dict):
     engine = create_engine(DB_URL, echo=True)
@@ -315,6 +317,21 @@ def get_current():
                     float_value = row.Current.float_value,
                     str_value = row.Current.str_value
                 )
+            }
+
+def get_state():
+    """
+    Получить текущие состояние системы
+    """
+    engine = create_engine(DB_URL, echo=True)
+    with Session(engine) as session:
+        query = select(State)
+        for state in session.scalars(query).all():
+            yield {
+                "id": state.id,
+                "tm": f"{state.updated_at.isoformat()}Z", # это время в UTC
+                "ds": state.Description,  # Тип тега из Tag
+                "st": state.status,
             }
 
 def run(q):

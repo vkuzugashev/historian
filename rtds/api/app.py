@@ -157,21 +157,6 @@ def reload():
 
     return {'status': 'OK'}
 
-@app.route('/api/status', methods=['GET'])
-def get_status():
-    """
-        RTDS status
-        ---
-        tags:
-          - status
-        responses:
-          200:
-            description: Get status success
-    """
-
-    app.logger.debug(f'get status')
-
-    return jsonify({'status': 'OK'})
 
 @app.route('/api/history/<start_time>/<size>', methods=['GET'])
 def get_history(start_time, size):
@@ -236,6 +221,40 @@ def get_current():
           first = True
           yield "["
           for item in storage.get_current():
+            if first:        
+              first = False
+            else:
+              yield ","
+            yield json.dumps(item)
+          yield "]"
+        return Response(generator(), mimetype='application/json')
+        
+    except Exception as err:
+        app.logger.error(f'{err}')
+        error_message = err.args[0]
+        return {'error': error_message}, 400
+
+@app.route('/api/state', methods=['GET'])
+def get_state():
+    """
+        Get RTDS current state
+        ---
+        tags:
+          - state
+        responses:
+          200:
+            description: get success
+          404:
+            description: not found
+    """
+    
+    app.logger.debug(f'get_state values')
+
+    try:
+        def generator():
+          first = True
+          yield "["
+          for item in storage.get_state():
             if first:        
               first = False
             else:
