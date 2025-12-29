@@ -1,14 +1,17 @@
 import logging 
-from os import path
 import os
 from pathlib import Path
 import sys
 import time 
-import multiprocessing as mp 
-import config 
-from models import Tag, TagValue 
-import storage
 from prometheus_client import start_http_server, Counter, Summary
+import multiprocessing as mp 
+
+sys.path.extend(['.','..'])
+
+import configs.file as config
+from models.tag import Tag, TagValue 
+import storeges.sqlite as store
+import api.server as api
 
 log = logging.getLogger('server')
 
@@ -16,7 +19,8 @@ tags = {}
 connectors = {}
 scripts = {}
 processes = {}
-store_queue = mp.Queue()    
+store_queue = mp.Queue()
+http_queue = mp.Queue() 
 
 # метрики
 REQUEST_LATENCY = Summary('request_latency_seconds', 'Description of histogram')
@@ -62,10 +66,17 @@ def set(value):
 def storage_run(q):
     log.info('storage process started')
     try:
-        storage.run(q)
+        store.run(q)
     except Exception as e:
         log.error(f'storage process stoped, error: {e}')
-        
+
+def api_run():
+    log.info('api process started')
+    try:
+        api.run()
+    except Exception as e:
+        log.error(f'api process stoped, error: {e}')
+
 def connector_run(connector):
     try:
         connector.run()
@@ -79,6 +90,34 @@ def connector_read(connector):
         _set(value)
     log.debug(f'connector {connector.name} read process stop')
 
+
+def load_config():
+    global connectors, tags, scripts    
+    connectors, tags, scripts = store.get_config(server=sys.modules[__name__])
+    log.info(f'Loaded config, connectors: {len(connectors)}, tags: {len(tags)}, scripts: {len(scripts)}')
+    return connectors, tags, scripts
+
+
+def start_connectors():
+    global connectors
+    for _, connector in connectors.items():
+        p = mp.Process(target=connector_run, args=(connector,))
+        p.start()
+        processes[connector.name] = p
+        log.info(f'connector {connector.name} started')
+
+def reload():
+    global connectors, tags, scripts
+
+    for _, connector in connectors.items():
+        p = processes[connector.name]
+        p.terminate()
+        p.join()
+        log.info(f'process {connector.name}, stoped')
+    
+    connectors, tags, scripts = load_config()
+    start_connectors()
+
 @REQUEST_LATENCY.time()
 def request_cycle():
     for _, connector in sorted(connectors.items()):
@@ -87,21 +126,20 @@ def request_cycle():
         script.run()
     
 def run():
-    global connectors, tags, scripts
-    
-    connectors, tags, scripts = storage.get_config(server=sys.modules[__name__])
-    log.info(f'Loaded config, connectors: {len(connectors)}, tags: {len(tags)}, scripts: {len(scripts)}')
-
     p = mp.Process(target=storage_run, args=(store_queue,))
     p.start()
     processes['storage'] = p
     log.info(f'storage started')
 
-    for _, connector in connectors.items():
-        p = mp.Process(target=connector_run, args=(connector,))
-        p.start()
-        processes[connector.name] = p
-        log.info(f'connector {connector.name} started')
+    h = mp.Process(target=api_run)
+    h.start()
+    processes['api'] = h
+    log.info(f'api started')
+   
+    global connectors, tags
+    connectors, tags, _ = load_config()
+
+    start_connectors()
 
     time.sleep(5)
     log.info('server loop started')
@@ -130,9 +168,9 @@ if __name__ == '__main__':
         configFile = os.path.join(str(Path(__name__).parent), sys.argv[1])
         connectors, tags, scripts = config.load_from_file(server=sys.modules[__name__], configFile=configFile)
         log.info(f'Connectors: {len(connectors)}, Tags: {len(tags)}, Scripts: {len(scripts)}')
-        storage.set_config(connectors, tags, scripts)
+        store.set_config(connectors, tags, scripts)
 
-    log.info(storage.DB_URL)
+    log.info(store.DB_URL)
     # Start up the server to expose the metrics.    
     start_http_server(4000)
     run()

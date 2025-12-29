@@ -1,28 +1,19 @@
-import json
 import multiprocessing as mp
 import time
 from typing import Optional
-from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime, Text, MetaData, insert, select
+from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime, Text, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import logging
 
-from models import Tag as DTag, TagType, TagValue, get_tag_type, get_tag_value
+from models.tag import Tag as DTag, TagType, TagValue, get_tag_type, get_tag_value
 from connectors.connector_factory import get_connector
 from scripts.script import Script as DScript
 
 log = logging.getLogger('storage')
 
-# app = Flask(__name__)
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///history.db'
-# app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 batch_size = 50
-
-# db = SQLAlchemy()
-# db.init_app(app)
 
 DB_URL = 'sqlite:///data/history.db'
 

@@ -10,10 +10,10 @@ from flask_swagger_ui import get_swaggerui_blueprint
 from sqlalchemy import or_
 from werkzeug.utils import secure_filename
 
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.extend(['.','..'])
 
-import config, storage
+import configs.file as config
+import storeges.sqlite as store
 
 dictConfig({'version': 1, 'root': {'level': 'DEBUG'}})
 
@@ -76,7 +76,7 @@ def get_config():
     """
     app.logger.debug(f'get_config')
     try:
-        connectors, tags, scripts = storage.export_config()
+        connectors, tags, scripts = store.export_config()
         # получить имя временного файла
         config_file_path = tempfile.gettempdir() + "/config.ods"
         config.export_to_file(connectors, tags, scripts, config_file_path)
@@ -135,7 +135,7 @@ def set_config():
 
         # Загрузка файла
         connectors, tags, scripts = config.load_from_file(None, configFile)
-        storage.set_config(connectors, tags, scripts)
+        store.set_config(connectors, tags, scripts)
 
         return {"status": "ok"}, 201
     except Exception as err:
@@ -186,7 +186,7 @@ def get_history(start_time, size):
         def generator():
           first = True
           yield "["
-          for item in storage.get_history(start_time, size):
+          for item in store.get_history(start_time, size):
             if first:              
               first = False
             else:
@@ -220,7 +220,7 @@ def get_current():
         def generator():
           first = True
           yield "["
-          for item in storage.get_current():
+          for item in store.get_current():
             if first:        
               first = False
             else:
@@ -254,7 +254,7 @@ def get_state():
         def generator():
           first = True
           yield "["
-          for item in storage.get_state():
+          for item in store.get_state():
             if first:        
               first = False
             else:
@@ -268,6 +268,8 @@ def get_state():
         error_message = err.args[0]
         return {'error': error_message}, 400
 
+def run():
+   app.run(port=5001)
+
 if __name__ == '__main__':
-  storage.DB_URL = 'sqlite:///../data/history.db'
-  app.run(port=5001)
+  run()

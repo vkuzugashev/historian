@@ -2,7 +2,7 @@ import logging
 import queue
 import random as rnd
 from connectors.connector_abc import ConnectorABC
-from models import TagType, Tag, TagValue
+from models.tag import TagType, Tag, TagValue
 
 log = logging.getLogger('ConnectorTest')
 

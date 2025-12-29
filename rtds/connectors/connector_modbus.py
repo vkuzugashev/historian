@@ -2,12 +2,7 @@ import logging
 import queue
 from dataclasses import dataclass
 from pyModbusTCP.client import ModbusClient
-from models import TagType, Tag, TagValue
-
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).parent.parent))
+from models.tag import TagType, Tag, TagValue
 
 from connectors.connector_abc import ConnectorABC
 

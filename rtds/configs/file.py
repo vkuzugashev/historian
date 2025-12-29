@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from typing import OrderedDict
 from pyexcel_ods3 import get_data, save_data
-from models import Tag, get_tag_type
+from models.tag import Tag, get_tag_type
 from scripts.script import Script
 from connectors.connector_factory import get_connector
 
