@@ -4,13 +4,14 @@ from pathlib import Path
 import sys
 import time 
 from prometheus_client import start_http_server, Counter, Summary
-import multiprocessing as mp 
+import multiprocessing as mp
 
 sys.path.extend(['.','..'])
 
 import configs.file as config
 from models.tag import Tag, TagValue 
-import storeges.sqlite as store
+from models.command import CommandEnum, Command 
+import storeges.sqldb as store
 import api.server as api
 
 log = logging.getLogger('server')
@@ -20,7 +21,7 @@ connectors = {}
 scripts = {}
 processes = {}
 store_queue = mp.Queue()
-http_queue = mp.Queue() 
+api_command_queue = mp.Queue() 
 
 # метрики
 REQUEST_LATENCY = Summary('request_latency_seconds', 'Description of histogram')
@@ -70,12 +71,24 @@ def storage_run(q):
     except Exception as e:
         log.error(f'storage process stoped, error: {e}')
 
-def api_run():
+def api_run(q):
     log.info('api process started')
     try:
-        api.run()
+        api.run(q)
     except Exception as e:
         log.error(f'api process stoped, error: {e}')
+
+def api_command_handler():
+    log.debug('api command reading...')
+    
+    if not api_command_queue.empty():
+        command = api_command_queue.get()
+        if isinstance(command, Command) and command.command_enum == CommandEnum.RELOAD:
+            reload_config()
+        else:
+            log.warning(f'unknow command: {command.command_enum}')
+
+    log.debug('api command reding stoped')
 
 def connector_run(connector):
     try:
@@ -90,13 +103,27 @@ def connector_read(connector):
         _set(value)
     log.debug(f'connector {connector.name} read process stop')
 
-
+# загрузить конфигурацию
 def load_config():
     global connectors, tags, scripts    
     connectors, tags, scripts = store.get_config(server=sys.modules[__name__])
     log.info(f'Loaded config, connectors: {len(connectors)}, tags: {len(tags)}, scripts: {len(scripts)}')
     return connectors, tags, scripts
 
+
+def start_process(process_name, target, args):
+    global processes
+    p = mp.Process(target=target, args=args)
+    p.start()
+    processes[process_name] = p
+    log.info(f'{process_name} started')
+
+def stop_processes():
+    global processes
+    for key, process in processes.items():
+        process.terminate()
+        process.join()
+        log.info(f'process {key}, stoped')    
 
 def start_connectors():
     global connectors
@@ -106,9 +133,11 @@ def start_connectors():
         processes[connector.name] = p
         log.info(f'connector {connector.name} started')
 
-def reload():
+def reload_config():
     global connectors, tags, scripts
-
+    
+    log.debug('configuration reloading started ...')
+    
     for _, connector in connectors.items():
         p = processes[connector.name]
         p.terminate()
@@ -117,6 +146,8 @@ def reload():
     
     connectors, tags, scripts = load_config()
     start_connectors()
+    
+    log.debug('success reloaded configuration')
 
 @REQUEST_LATENCY.time()
 def request_cycle():
@@ -126,15 +157,9 @@ def request_cycle():
         script.run()
     
 def run():
-    p = mp.Process(target=storage_run, args=(store_queue,))
-    p.start()
-    processes['storage'] = p
-    log.info(f'storage started')
 
-    h = mp.Process(target=api_run)
-    h.start()
-    processes['api'] = h
-    log.info(f'api started')
+    start_process(process_name='storage', target=storage_run, args=(store_queue,))
+    start_process(process_name='api', target=api_run, args=(api_command_queue,))
    
     global connectors, tags
     connectors, tags, _ = load_config()
@@ -151,14 +176,12 @@ def run():
     try:
         while True:
             request_cycle()
-            time.sleep(1)
+            api_command_handler()
+            time.sleep(0.1)
     except BaseException as e:
         log.error(f'server loop stoped, error: {e}')
 
-    for key, process in processes.items():
-        process.terminate()
-        process.join()
-        log.info(f'process {key}, stoped')
+    stop_processes()
 
 if __name__ == '__main__':    
     logging.basicConfig(level='INFO')

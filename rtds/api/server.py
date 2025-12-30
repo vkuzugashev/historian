@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 import os
 import sys
 import tempfile
@@ -9,17 +8,22 @@ from flask_swagger import swagger
 from flask_swagger_ui import get_swaggerui_blueprint
 from sqlalchemy import or_
 from werkzeug.utils import secure_filename
+import multiprocessing as mp
 
 sys.path.extend(['.','..'])
 
 import configs.file as config
-import storeges.sqlite as store
+import storeges.sqldb as store
+from models.command import CommandEnum, Command
 
 dictConfig({'version': 1, 'root': {'level': 'DEBUG'}})
 
 app = Flask(__name__)
 #app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///execution.db'
 #app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Очередь для обмена данными между процессами
+api_command_queue: mp.Queue = None
 
 # Путь для сохранения загруженных файлов
 UPLOAD_FOLDER = "uploads"
@@ -154,6 +158,10 @@ def reload():
           200:
             description: RTDS reload success
     """
+    global api_command_queue
+    
+    if api_command_queue is not None:
+      api_command_queue.put(Command(CommandEnum.RELOAD))
 
     return {'status': 'OK'}
 
@@ -268,7 +276,12 @@ def get_state():
         error_message = err.args[0]
         return {'error': error_message}, 400
 
-def run():
+def run(api_queue = None):
+   global api_command_queue
+   
+   if api_queue:
+       api_command_queue = api_queue
+   
    app.run(port=5001)
 
 if __name__ == '__main__':
