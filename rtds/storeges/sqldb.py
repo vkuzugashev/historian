@@ -1,11 +1,14 @@
 import multiprocessing as mp
 import time
 from typing import Optional
-from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime, Text, select
+from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime, Text, select, delete
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from datetime import datetime, timedelta, timezone
 import logging
+import sys
+
+sys.path.extend(['.', '..'])
 
 from models.tag import Tag as DTag, TagType, TagValue, get_tag_type, get_tag_value
 from connectors.connector_factory import get_connector
@@ -14,6 +17,7 @@ from scripts.script import Script as DScript
 log = logging.getLogger('storage')
 
 batch_size = 50
+delete_old_history_hours = 24
 
 DB_URL = 'sqlite:///data/history.db'
 
@@ -74,8 +78,7 @@ class Current(Base):
 class State(Base):
     __tablename__ = 'state'
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime)
-    status: Mapped[Optional[str]] = mapped_column(String(100))    
+    value: Mapped[Optional[str]] = mapped_column(String(100))    
     description: Mapped[Optional[str]] = mapped_column(String(500))    
 
 def set_connectors(connectors:dict):
@@ -179,7 +182,28 @@ def get_config(server):
                 description=item.description)
             scripts[script.name] = script
 
+    # сохраним состояние конфигурации
+    set_state(connectors, tags, scripts)
+
     return connectors, tags, scripts
+
+def set_config(connectors, tags, scripts):
+    """
+    Сохранить конфигурацию в БД
+    """
+    engine = create_engine(DB_URL, echo=True)
+
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)    
+
+    if connectors:
+        set_connectors(connectors)
+    
+    if tags:
+        set_tags(tags)
+    
+    if scripts:
+        set_scripts(scripts)
 
 def export_config():
     """
@@ -229,25 +253,7 @@ def export_config():
             scripts[script["name"]] = script
 
     return connectors, tags, scripts
-
-def set_config(connectors, tags, scripts):
-    """
-    Сохранить конфигурацию в БД
-    """
-    engine = create_engine(DB_URL, echo=True)
-
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)    
-
-    if connectors:
-        set_connectors(connectors)
     
-    if tags:
-        set_tags(tags)
-    
-    if scripts:
-        set_scripts(scripts)
-
 def get_history(start_time, size):
     """
     Получить историю тегов отсортированной по времени
@@ -283,7 +289,6 @@ def get_history(start_time, size):
                     )
                 }
 
-
 # получить текущие значения тегов            
 def get_current():
     """
@@ -310,6 +315,49 @@ def get_current():
                 )
             }
 
+def set_state(connectors, tags, scripts):
+    engine = create_engine(DB_URL, echo=True)
+    
+    with Session(engine) as session:
+        # удалить старые записи
+        session.query(State).delete()
+
+        if connectors:
+            count = len(connectors)
+            state = State(
+                id='connectors',
+                value=f'{count}',
+                description='connectors count'
+            )
+            session.add(state)
+    
+        if tags:
+            count = len(tags)
+            state = State(
+                id='tags',
+                value=f'{count}',
+                description='tags count'
+            )
+            session.add(state)
+
+        if scripts:
+            count = len(scripts)
+            state = State(
+                id='scripts',
+                value=f'{count}',
+                description='scripts count'
+            )
+            session.add(state)
+        
+        state = State(
+            id='config_time',
+            value=f'{datetime.now(timezone.utc)}',
+            description='configuration loading time'
+        )
+        session.add(state)
+
+        session.commit()
+
 def get_state():
     """
     Получить текущие состояние системы
@@ -320,15 +368,41 @@ def get_state():
         for state in session.scalars(query).all():
             yield {
                 "id": state.id,
-                "tm": f"{state.updated_at.isoformat()}Z", # это время в UTC
-                "ds": state.Description,  # Тип тега из Tag
-                "st": state.status,
+                #"tm": f"{state.updated_at.isoformat()}Z", # это время в UTC
+                "ds": state.description,  # Тип тега из Tag
+                "vl": state.value,
             }
+
+def init_db():
+    engine = create_engine(DB_URL, echo=True)
+    Base.metadata.create_all(engine)
+
+def delete_old_history():
+    if delete_old_history_hours:
+        engine = create_engine(DB_URL, echo=True)
+        with Session(engine) as session:
+            # удалить старые строки из history
+            delete_time = datetime.now(timezone.utc) - timedelta(hours=delete_old_history_hours)
+            query = (
+                delete(History)
+                .where(History.tag_time < delete_time)
+            )
+            if session.execute(query):
+                if delete_old_history_hours > 1:
+                    log.info(f'delete old history: {delete_old_history_hours} days')
+                else:
+                    log.info(f'delete old history: {delete_old_history_hours} day')
+            else:
+                if delete_old_history_hours > 1:
+                    log.info(f'no old history: {delete_old_history_hours} days')
+                else:
+                    log.info(f'no old history: {delete_old_history_hours} day')
+
 
 def run(q):
     batch = []
     currents = []
-
+    
     while True:
             
         # получить значение из очереди если есть
@@ -371,11 +445,15 @@ def run(q):
                     currents_write(currents)                        
                     currents = []
 
+                # удалить старые записи из history
+                if len(batch) >= batch_size or len(currents) >= batch_size or q.empty():
+                    delete_old_history()
+
             except Exception as e:
                 log.error(f'fail store value: {value}, error: {e}')
-
         else:
             log.warning(f'Unsupport type: {value}')
+        
 
 def batch_write(batch):
     engine = create_engine(DB_URL, echo=True)

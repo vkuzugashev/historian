@@ -157,12 +157,14 @@ def request_cycle():
         script.run()
     
 def run():
-
-    start_process(process_name='storage', target=storage_run, args=(store_queue,))
-    start_process(process_name='api', target=api_run, args=(api_command_queue,))
-   
+    
+    store.init_db()
+    
     global connectors, tags
     connectors, tags, _ = load_config()
+
+    start_process(process_name='storage', target=storage_run, args=(store_queue,))
+    start_process(process_name='api', target=api_run, args=(api_command_queue,))  
 
     start_connectors()
 
