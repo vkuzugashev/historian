@@ -58,7 +58,7 @@ class Tag(Base):
 class History(Base):
     __tablename__ = 'history'
     tag_id: Mapped[str] = mapped_column(String(10), primary_key=True)
-    tag_time: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
+    tag_time: Mapped[datetime] = mapped_column(DateTime, primary_key=True, index=True)
     status: Mapped[int] = mapped_column(Integer)    
     bool_value: Mapped[Optional[bool]] = mapped_column(Boolean)    
     int_value: Mapped[Optional[int]] = mapped_column(Integer)    
