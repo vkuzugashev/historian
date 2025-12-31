@@ -1,12 +1,12 @@
 from abc import ABC
 import time
-import logging
+import loggers.logger as logger
 from dataclasses import dataclass
 
-log = logging.getLogger('ConnectorABC')
 
 @dataclass
 class ConnectorABC(ABC):
+    log = None
     name:str = None
     cycle:int = None
     connection_string:dict = None
@@ -16,7 +16,8 @@ class ConnectorABC(ABC):
     is_read_only:bool = None
     description:str = None
 
-    def __init__(self, name, cycle, connection_string, tags, read_queue, is_read_only=True, write_queue=None, description=None):
+    def __init__(self, log, name, cycle, connection_string, tags, read_queue, is_read_only=True, write_queue=None, description=None):
+        self.log = log
         self.name = name
         self.cycle = cycle
         self.tags = tags
@@ -40,7 +41,7 @@ class ConnectorABC(ABC):
         pass
 
     def __pause(self):
-        log.debug(f'pause: {self.cycle} sec')
+        self.log.debug(f'pause: {self.cycle} sec')
         time.sleep(self.cycle)    
 
     def run(self):

@@ -5,7 +5,6 @@ from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime,
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from datetime import datetime, timedelta, timezone
-import logging
 import sys
 
 sys.path.extend(['.', '..'])
@@ -13,11 +12,13 @@ sys.path.extend(['.', '..'])
 from models.tag import Tag as DTag, TagType, TagValue, get_tag_type, get_tag_value
 from connectors.connector_factory import get_connector
 from scripts.script import Script as DScript
+from loggers import logger
 
-log = logging.getLogger('storage')
+log = logger.get_default('storage')
 
 batch_size = 50
-delete_old_history_hours = 24
+delete_old_history_hours = 1
+sql_engine_echo = False
 
 DB_URL = 'sqlite:///data/history.db'
 
@@ -82,7 +83,7 @@ class State(Base):
     description: Mapped[Optional[str]] = mapped_column(String(500))    
 
 def set_connectors(connectors:dict):
-    engine = create_engine(DB_URL, echo=True)
+    engine = create_engine(DB_URL, echo=sql_engine_echo)
     with Session(engine) as session: 
         for item in connectors.values():
             log.debug(f'save connector item: {item}')
@@ -100,7 +101,7 @@ def set_connectors(connectors:dict):
             session.commit()
 
 def set_tags(tags:dict):
-    engine = create_engine(DB_URL, echo=True)
+    engine = create_engine(DB_URL, echo=sql_engine_echo)
     with Session(engine) as session: 
         for item in tags.values():
             log.debug(f'save tag item: {item}')
@@ -121,7 +122,7 @@ def set_tags(tags:dict):
             session.commit()
 
 def set_scripts(scripts:dict):
-    engine = create_engine(DB_URL, echo=True)
+    engine = create_engine(DB_URL, echo=sql_engine_echo)
     with Session(engine) as session: 
         for item in scripts.values():
             log.debug(f'save script item: {item}')
@@ -146,7 +147,7 @@ def get_config(server):
     connectors = {}
     scripts = {}
 
-    engine = create_engine(DB_URL, echo=True)
+    engine = create_engine(DB_URL, echo=sql_engine_echo)
     with Session(engine) as session:
         for item in session.scalars(select(Tag)).all():
             tag = DTag(name=item.id, 
@@ -191,7 +192,7 @@ def set_config(connectors, tags, scripts):
     """
     Сохранить конфигурацию в БД
     """
-    engine = create_engine(DB_URL, echo=True)
+    engine = create_engine(DB_URL, echo=sql_engine_echo)
 
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)    
@@ -214,7 +215,7 @@ def export_config():
     connectors = {}
     scripts = {}
 
-    engine = create_engine(DB_URL, echo=True)
+    engine = create_engine(DB_URL, echo=sql_engine_echo)
     with Session(engine) as session:
         for item in session.scalars(select(Tag)).all():
             tag = { 
@@ -265,7 +266,7 @@ def get_history(start_time, size):
         else:
             start_time = datetime.now(timezone.utc) - timedelta(days=1)
 
-    engine = create_engine(DB_URL, echo=True)
+    engine = create_engine(DB_URL, echo=sql_engine_echo)
     with Session(engine) as session:
         if start_time:
             query = (
@@ -294,7 +295,7 @@ def get_current():
     """
     Получить текущие значения тегов
     """
-    engine = create_engine(DB_URL, echo=True)
+    engine = create_engine(DB_URL, echo=sql_engine_echo)
     with Session(engine) as session:
         query = (
             select(Current, Tag)
@@ -316,7 +317,7 @@ def get_current():
             }
 
 def set_state(connectors, tags, scripts):
-    engine = create_engine(DB_URL, echo=True)
+    engine = create_engine(DB_URL, echo=sql_engine_echo)
     
     with Session(engine) as session:
         # удалить старые записи
@@ -362,7 +363,7 @@ def get_state():
     """
     Получить текущие состояние системы
     """
-    engine = create_engine(DB_URL, echo=True)
+    engine = create_engine(DB_URL, echo=sql_engine_echo)
     with Session(engine) as session:
         query = select(State)
         for state in session.scalars(query).all():
@@ -374,12 +375,13 @@ def get_state():
             }
 
 def init_db():
-    engine = create_engine(DB_URL, echo=True)
+    engine = create_engine(DB_URL, echo=sql_engine_echo)
     Base.metadata.create_all(engine)
+    log.info('database initialized')
 
 def delete_old_history():
     if delete_old_history_hours:
-        engine = create_engine(DB_URL, echo=True)
+        engine = create_engine(DB_URL, echo=sql_engine_echo)
         with Session(engine) as session:
             # удалить старые строки из history
             delete_time = datetime.now(timezone.utc) - timedelta(hours=delete_old_history_hours)
@@ -387,30 +389,39 @@ def delete_old_history():
                 delete(History)
                 .where(History.tag_time < delete_time)
             )
-            if session.execute(query):
-                if delete_old_history_hours > 1:
-                    log.info(f'delete old history: {delete_old_history_hours} days')
+            try:
+                result = session.execute(query)  
+                deleted_count = result.rowcount
+                session.commit()
+                
+                if deleted_count > 0:
+                    log.info(f'delete old history: {deleted_count} rows')
                 else:
-                    log.info(f'delete old history: {delete_old_history_hours} day')
-            else:
-                if delete_old_history_hours > 1:
-                    log.info(f'no old history: {delete_old_history_hours} days')
-                else:
-                    log.info(f'no old history: {delete_old_history_hours} day')
+                    log.info(f'no old history')
+            except Exception as e:
+                session.rollback()
+                log.error(f'Error deleting old history: {e}')
 
 
-def run(q):
+
+def run(log_queue, store_queue):
+    global log
+
     batch = []
     currents = []
     
+    if log_queue:
+        log = logger.get_default('store', log_queue)
+        log.info('store process started')
+
     while True:
             
         # получить значение из очереди если есть
-        if q.empty():
+        if store_queue.empty():
             time.sleep(0.01)
             continue
 
-        value = q.get()
+        value = store_queue.get()
             
         if isinstance(value, TagValue):
             try:
@@ -437,16 +448,16 @@ def run(q):
                 
                 currents.append(current)
 
-                if len(batch) >= batch_size or q.empty():
+                if len(batch) >= batch_size or store_queue.empty():
                     batch_write(batch)                        
                     batch = []
                 
-                if len(currents) >= batch_size or q.empty():
+                if len(currents) >= batch_size or store_queue.empty():
                     currents_write(currents)                        
                     currents = []
 
                 # удалить старые записи из history
-                if len(batch) >= batch_size or len(currents) >= batch_size or q.empty():
+                if len(batch) >= batch_size or len(currents) >= batch_size or store_queue.empty():
                     delete_old_history()
 
             except Exception as e:
@@ -456,7 +467,7 @@ def run(q):
         
 
 def batch_write(batch):
-    engine = create_engine(DB_URL, echo=True)
+    engine = create_engine(DB_URL, echo=sql_engine_echo)
     with Session(engine) as session:
         try:
             session.bulk_save_objects(batch)
@@ -466,7 +477,7 @@ def batch_write(batch):
             log.error(f'fail store batch: {len(batch)}, error: {e}')
 
 def currents_write(items):
-    engine = create_engine(DB_URL, echo=True)
+    engine = create_engine(DB_URL, echo=sql_engine_echo)
     with Session(engine) as session:
         try:
             #Атомарный UPSERT для всех записей
@@ -490,8 +501,7 @@ def currents_write(items):
         except Exception as e:
             log.error(f'fail store current: {len(items)}, error: {e}')
 
-if __name__ == '__main__':
-    logging.basicConfig(level='INFO')
+if __name__ == '__main__':    
     engine = create_engine(DB_URL, echo=True)
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

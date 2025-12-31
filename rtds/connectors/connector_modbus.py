@@ -1,12 +1,10 @@
-import logging
 import queue
 from dataclasses import dataclass
 from pyModbusTCP.client import ModbusClient
+from loggers import logger
 from models.tag import TagType, Tag, TagValue
-
 from connectors.connector_abc import ConnectorABC
 
-log = logging.getLogger('ConnectorModbus')
 
 @dataclass
 class ConnectorModbus(ConnectorABC):
@@ -23,8 +21,8 @@ class ConnectorModbus(ConnectorABC):
     client:ModbusClient=None
     
 
-    def __init__(self, name, cycle, connection_string, tags, read_queue, is_read_only=True, write_queue=None, description=None):
-        super().__init__(name, cycle, connection_string, tags, read_queue, is_read_only, write_queue, description)
+    def __init__(self, log, name, cycle, connection_string, tags, read_queue, is_read_only=True, write_queue=None, description=None):
+        super().__init__(log, name, cycle, connection_string, tags, read_queue, is_read_only, write_queue, description)
         try:
             self.host=self.connection_string['host']
             self.port=int(self.connection_string['port'])
@@ -46,7 +44,7 @@ but got:
                                    auto_open=self.auto_open,
                                    auto_close=self.auto_close,
                                    timeout=self.timeout)
-        log.debug(self)
+        self.log.debug(self)
 
     def _source_parse(self, source):
         #source = 'C:0:10' | 'DI:0:10' | 'RI:0:10' | 'RH:0:10'
@@ -81,7 +79,7 @@ but got:
         try:
             sl = self._source_parse(source)
         except ValueError as e:
-            log.error(e.message)
+            self.log.error(e.message)
             return None
         if sl[0] == 'C':
             return self._read_coils(sl[1], sl[2])
@@ -101,28 +99,28 @@ but got:
             self.client.close()
         
     def read(self):
-        log.debug(f'read cycle process start')
+        self.log.debug(f'read cycle process start')
         for key, tag in self.tags:
             result_list = self._read(tag.source)
             if result_list is not None and len(result_list) == 1:
                 value = result_list[0]
             else:
                 value = result_list
-            log.debug(f'read modbus address: {tag.source} and get value: {value}')
+            self.log.debug(f'read modbus address: {tag.source} and get value: {value}')
             tgv = TagValue(name=key, type_=tag.type_, status=0, value=value)
             self.read_queue.put(tgv)
-        log.debug(f'read cycle processed')
+        self.log.debug(f'read cycle processed')
 
     def write(self):
-        log.debug(f'write cycle process start')
+        self.log.debug(f'write cycle process start')
         if not self.is_read_only and self.write_queue is not None:
             while not self.write_queue.empty():
                 value = self.write_queue.get()
                 log.dbug(f'write tag: {value}')
-        log.debug(f'write cycle processed')
+        self.log.debug(f'write cycle processed')
 
 if __name__ == '__main__':
-    logging.basicConfig(level='DEBUG')
+    log = logger.get_default('ConnectorModbus') 
     log.info('test begin')    
     tags = {}
     read_queue = queue.Queue()

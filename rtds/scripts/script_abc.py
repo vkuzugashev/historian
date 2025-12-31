@@ -1,10 +1,9 @@
 from abc import ABC
 from datetime import datetime, timezone
-import logging
-
-log = logging.getLogger('ScriptABC')
+from loggers import logger
 
 class ScriptABC(ABC):
+    log = None
     name:str = None
     cycle:int = None
     server:object = None
@@ -15,6 +14,7 @@ class ScriptABC(ABC):
     description:str = None
 
     def __init__(self, server, name, cycle, script, is_active=False, description=None):
+        self.log = logger.get_default(name, server.log_queue if server else None)
         self.server = server
         self.name = name
         self.cycle = cycle
@@ -25,10 +25,10 @@ class ScriptABC(ABC):
                 self.script_object = compile(source=script, mode='exec', filename='')
                 self.is_active = is_active
                 self.last_run = datetime.now(timezone.utc)
-                log.info(f'success build script: {name}')
+                self.log.info(f'success build script: {name}')
             except Exception as e:
                 self.is_active = False
-                log.error(f"Script compile error, script text: '{script}', error: '{e}'")
+                self.log.error(f"Script compile error, script text: '{script}', error: '{e}'")
         else:
             raise Exception('No text script')
 
@@ -37,7 +37,7 @@ class ScriptABC(ABC):
             try:
                 self.last_run = datetime.now(timezone.utc)
                 exec(self.script_object)
-                log.debug(f'script {self.name} executed success')
+                self.log.debug(f'script {self.name} executed success')
             except Exception as e:
-                log.error(f'script {self.name} executed  with error', e)
+                self.log.error(f'script {self.name} executed  with error', e)
     

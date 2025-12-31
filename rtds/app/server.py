@@ -1,4 +1,3 @@
-import logging 
 import os
 from pathlib import Path
 import sys
@@ -8,20 +7,23 @@ import multiprocessing as mp
 
 sys.path.extend(['.','..'])
 
+from loggers import logger
 import configs.file as config
 from models.tag import Tag, TagValue 
 from models.command import CommandEnum, Command 
 import storeges.sqldb as store
 import api.server as api
 
-log = logging.getLogger('server')
-
 tags = {}
 connectors = {}
 scripts = {}
 processes = {}
+
+log_queue = mp.Queue(-1)
 store_queue = mp.Queue()
 api_command_queue = mp.Queue() 
+
+log = logger.get_default('server', log_queue)
 
 # метрики
 REQUEST_LATENCY = Summary('request_latency_seconds', 'Description of histogram')
@@ -64,15 +66,17 @@ def set(value):
     else:
         log.error(f'Unsupport type: {value}')
 
-def storage_run(q):
+def storage_run(log_queue, store_queue):
     log.info('storage process started')
+
     try:
-        store.run(q)
+        store.run(log_queue, store_queue)
     except Exception as e:
         log.error(f'storage process stoped, error: {e}')
 
 def api_run(q):
     log.info('api process started')
+
     try:
         api.run(q)
     except Exception as e:
@@ -98,9 +102,11 @@ def connector_run(connector):
 
 def connector_read(connector):
     log.debug(f'connector {connector.name} read process start ...')
+
     while not connector.read_queue.empty():
         value = connector.read_queue.get()
         _set(value)
+
     log.debug(f'connector {connector.name} read process stop')
 
 # загрузить конфигурацию
@@ -119,7 +125,6 @@ def start_process(process_name, target, args):
     log.info(f'{process_name} started')
 
 def stop_processes():
-    global processes
     for key, process in processes.items():
         process.terminate()
         process.join()
@@ -136,7 +141,7 @@ def start_connectors():
 def reload_config():
     global connectors, tags, scripts
     
-    log.debug('configuration reloading started ...')
+    log.info('configuration reloading started ...')
     
     for _, connector in connectors.items():
         p = processes[connector.name]
@@ -147,7 +152,7 @@ def reload_config():
     connectors, tags, scripts = load_config()
     start_connectors()
     
-    log.debug('success reloaded configuration')
+    log.info('success reloaded configuration')
 
 @REQUEST_LATENCY.time()
 def request_cycle():
@@ -163,7 +168,7 @@ def run():
     global connectors, tags
     connectors, tags, _ = load_config()
 
-    start_process(process_name='storage', target=storage_run, args=(store_queue,))
+    start_process(process_name='storage', target=storage_run, args=(log_queue, store_queue,))
     start_process(process_name='api', target=api_run, args=(api_command_queue,))  
 
     start_connectors()
@@ -185,8 +190,11 @@ def run():
 
     stop_processes()
 
-if __name__ == '__main__':    
-    logging.basicConfig(level='INFO')
+if __name__ == '__main__':
+    
+    # Создаем QueueListener для обработки очереди
+    logger.start()
+
     log.info(f'Example load configuration from file (ods): server.py config.ods')
     if len(sys.argv) > 1:
         log.info(f'load config from file: {sys.argv[1]}')
@@ -199,3 +207,4 @@ if __name__ == '__main__':
     # Start up the server to expose the metrics.    
     start_http_server(4000)
     run()
+    logger.stop()

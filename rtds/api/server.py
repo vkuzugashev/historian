@@ -14,13 +14,15 @@ sys.path.extend(['.','..'])
 
 import configs.file as config
 import storeges.sqldb as store
+from loggers import logger
 from models.command import CommandEnum, Command
 
-dictConfig({'version': 1, 'root': {'level': 'DEBUG'}})
+# dictConfig({'version': 1, 'root': {'level': 'DEBUG'}})
 
 app = Flask(__name__)
 #app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///execution.db'
 #app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.logger = logger.get_default('api')
 
 # Очередь для обмена данными между процессами
 api_command_queue: mp.Queue = None

@@ -6,13 +6,19 @@ from pyexcel_ods3 import get_data, save_data
 from models.tag import Tag, get_tag_type
 from scripts.script import Script
 from connectors.connector_factory import get_connector
+from loggers import logger
+
+log = logger.get_default('config')
 
 def load_from_file(server, configFile: str):
+    log.info(f'Loading config from file: {configFile}')
     data = get_data(configFile)
     return load_from_dict(server, data)
 
 
 def load_from_dict(server, data:dict):
+    log.info(f'Loading config from dict: {data}')
+
     connectors = {}
     tags = {}
     scripts = {}
@@ -43,6 +49,7 @@ def load_from_dict(server, data:dict):
                                   is_read_only=True if item.get('is_read_only') == 1 else False,
                                   read_queue=mp.Queue(),
                                   write_queue=mp.Queue() if item.get('is_read_only') == 0 else None,
+                                  log_queue=server.log_queue if server else None,
                                   description=item.get('description'))
         connectors[connector.name] = connector
 
@@ -62,6 +69,8 @@ def load_from_dict(server, data:dict):
 
 # экспорт в calc файл
 def export_to_file(connectors, tags, scripts, configFile: str):
+    log.info(f'Export config to file: {configFile}')
+
     data = OrderedDict()
 
     _connectors = [[
