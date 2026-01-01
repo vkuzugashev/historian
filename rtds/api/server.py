@@ -2,11 +2,9 @@ import json
 import os
 import sys
 import tempfile
-from flask import Flask, Response, request, render_template, redirect, jsonify, send_file
-from logging.config import dictConfig
+from flask import Flask, Response, request, jsonify, send_file
 from flask_swagger import swagger
 from flask_swagger_ui import get_swaggerui_blueprint
-from sqlalchemy import or_
 from werkzeug.utils import secure_filename
 import multiprocessing as mp
 
@@ -22,7 +20,6 @@ from models.command import CommandEnum, Command
 app = Flask(__name__)
 #app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///execution.db'
 #app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.logger = logger.get_default('api')
 
 # Очередь для обмена данными между процессами
 api_command_queue: mp.Queue = None
@@ -278,12 +275,13 @@ def get_state():
         error_message = err.args[0]
         return {'error': error_message}, 400
 
-def run(api_queue = None):
-   global api_command_queue
+def run(log_queue=None, api_queue=None, metrics_queue=None):
+   global api_command_queue   
    
    if api_queue:
        api_command_queue = api_queue
    
+   app.logger = logger.get_default('api', log_queue)
    app.run(port=5001)
 
 if __name__ == '__main__':

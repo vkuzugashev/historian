@@ -13,11 +13,12 @@ from models.tag import Tag as DTag, TagType, TagValue, get_tag_type, get_tag_val
 from connectors.connector_factory import get_connector
 from scripts.script import Script as DScript
 from loggers import logger
+import metrics.server as metrics
 
 log = logger.get_default('storage')
 
 batch_size = 50
-delete_old_history_hours = 1
+delete_old_history_hours = 24
 sql_engine_echo = False
 
 DB_URL = 'sqlite:///data/history.db'
@@ -170,7 +171,10 @@ def get_config(server):
                                   is_read_only=item.is_read_only,
                                   read_queue=mp.Queue(),
                                   write_queue=mp.Queue() if item.is_read_only else None,
-                                  description=item.description)
+                                  log_queue=server.log_queue if server else None,
+                                  metrics_queue=server.metrics_queue if server else None,
+                                  description=item.description
+                                  )
             connectors[connector.name] = connector
 
         for item in session.scalars(select(Script)).all():
@@ -404,7 +408,7 @@ def delete_old_history():
 
 
 
-def run(log_queue, store_queue):
+def run(log_queue, store_queue, metrics_queue):
     global log
 
     batch = []
@@ -424,6 +428,7 @@ def run(log_queue, store_queue):
         value = store_queue.get()
             
         if isinstance(value, TagValue):
+            start_time = time.time()
             try:
                 history = History(
                     tag_id=value.name,
@@ -462,6 +467,16 @@ def run(log_queue, store_queue):
 
             except Exception as e:
                 log.error(f'fail store value: {value}, error: {e}')
+            finally:
+                duration = time.time() - start_time
+                metrics_queue.put(
+                    metrics.Metric(
+                        name    = metrics.MetricEnum.STORE_DURATION_CYCLE,
+                        labels  = 'store',
+                        value   = duration
+                    )
+                )
+
         else:
             log.warning(f'Unsupport type: {value}')
         
@@ -472,7 +487,7 @@ def batch_write(batch):
         try:
             session.bulk_save_objects(batch)
             session.commit()
-            log.debug(f'success stored batch: {len(batch)}')
+            log.info(f'success stored batch: {len(batch)}')
         except Exception as e:
             log.error(f'fail store batch: {len(batch)}, error: {e}')
 
@@ -497,7 +512,7 @@ def currents_write(items):
             session.execute(on_conflict_stmt)
             session.commit()
 
-            log.debug(f'success stored current: {len(items)}')        
+            log.info(f'success stored current: {len(items)}')        
         except Exception as e:
             log.error(f'fail store current: {len(items)}, error: {e}')
 

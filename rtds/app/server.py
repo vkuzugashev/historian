@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 import sys
 import time 
-from prometheus_client import start_http_server, Counter, Summary
 import multiprocessing as mp
 
 sys.path.extend(['.','..'])
@@ -13,6 +12,8 @@ from models.tag import Tag, TagValue
 from models.command import CommandEnum, Command 
 import storeges.sqldb as store
 import api.server as api
+import metrics.server as metrics
+
 
 tags = {}
 connectors = {}
@@ -21,14 +22,10 @@ processes = {}
 
 log_queue = mp.Queue(-1)
 store_queue = mp.Queue()
-api_command_queue = mp.Queue() 
+api_command_queue = mp.Queue()
+metrics_queue = mp.Queue()
 
 log = logger.get_default('server', log_queue)
-
-# метрики
-REQUEST_LATENCY = Summary('request_latency_seconds', 'Description of histogram')
-TAG_COUNTER = Counter('tag_counter', 'Tags count')
-CONNECTOR_COUNTER = Counter('connector_counter', 'Connectors count')
 
 def add(tag):
     if isinstance(tag, Tag):
@@ -66,19 +63,19 @@ def set(value):
     else:
         log.error(f'Unsupport type: {value}')
 
-def storage_run(log_queue, store_queue):
+def storage_run(log_queue, store_queue, metrics_queue):
     log.info('storage process started')
 
     try:
-        store.run(log_queue, store_queue)
+        store.run(log_queue, store_queue, metrics_queue)
     except Exception as e:
         log.error(f'storage process stoped, error: {e}')
 
-def api_run(q):
+def api_run(log_queue, api_command_queue, metrics_queue):
     log.info('api process started')
 
     try:
-        api.run(q)
+        api.run(log_queue, api_command_queue, metrics_queue)
     except Exception as e:
         log.error(f'api process stoped, error: {e}')
 
@@ -93,6 +90,14 @@ def api_command_handler():
             log.warning(f'unknow command: {command.command_enum}')
 
     log.debug('api command reding stoped')
+
+def metrics_run(log_queue, metrics_queue):
+    log.info('metrics process started')
+
+    try:
+        metrics.run(4000, log_queue, metrics_queue)
+    except Exception as e:
+        log.error(f'metrics process stoped, error: {e}')
 
 def connector_run(connector):
     try:
@@ -154,12 +159,16 @@ def reload_config():
     
     log.info('success reloaded configuration')
 
-@REQUEST_LATENCY.time()
-def request_cycle():
+def scan_cycle():
+    start_time = time.time()
     for _, connector in sorted(connectors.items()):
         connector_read(connector)
     for _, script in sorted(scripts.items()):
         script.run()
+    
+    duration = time.time() - start_time
+    metrics_queue.put(metrics.Metric(metrics.MetricEnum.SCAN_CYCLE_LATENCY, duration))
+    
     
 def run():
     
@@ -168,8 +177,9 @@ def run():
     global connectors, tags
     connectors, tags, _ = load_config()
 
-    start_process(process_name='storage', target=storage_run, args=(log_queue, store_queue,))
-    start_process(process_name='api', target=api_run, args=(api_command_queue,))  
+    start_process(process_name='storage', target=storage_run, args=(log_queue, store_queue, metrics_queue, ))
+    start_process(process_name='api', target=api_run, args=(log_queue, api_command_queue, metrics_queue, ))  
+    start_process(process_name='metrics', target=metrics_run, args=(log_queue, metrics_queue,))  
 
     start_connectors()
 
@@ -177,12 +187,12 @@ def run():
     log.info('server loop started')
 
     # Добавить cчетчики
-    TAG_COUNTER.inc(len(tags))
-    CONNECTOR_COUNTER.inc(len(connectors))
+    metrics_queue.put(metrics.Metric(metrics.MetricEnum.TAG_COUNTER, len(tags)))
+    metrics_queue.put(metrics.Metric(metrics.MetricEnum.CONNECTOR_COUNTER, len(connectors)))
 
     try:
         while True:
-            request_cycle()
+            scan_cycle()
             api_command_handler()
             time.sleep(0.1)
     except BaseException as e:
@@ -204,7 +214,7 @@ if __name__ == '__main__':
         store.set_config(connectors, tags, scripts)
 
     log.info(store.DB_URL)
-    # Start up the server to expose the metrics.    
-    start_http_server(4000)
+    
     run()
+    
     logger.stop()

@@ -8,15 +8,23 @@ from scripts.script import Script
 from connectors.connector_factory import get_connector
 from loggers import logger
 
-log = logger.get_default('config')
+log = None
 
-def load_from_file(server, configFile: str):
+def load_from_file(server:object, configFile: str):
+    global log
+    log = logger.get_default('config', server.log_queue)
+
     log.info(f'Loading config from file: {configFile}')
     data = get_data(configFile)
     return load_from_dict(server, data)
 
 
-def load_from_dict(server, data:dict):
+def load_from_dict(server:object, data:dict):
+    global log
+    
+    if log is None:
+        log = logger.get_default('config', server.log_queue)
+
     log.info(f'Loading config from dict: {data}')
 
     connectors = {}
@@ -38,6 +46,8 @@ def load_from_dict(server, data:dict):
                   description=item.get('description'))
         tags[tag.name] = tag
     
+    log.warning(f'????  server={server is None} queue={server.metrics_queue is None}')
+
     #load connectors
     rows = data['Connectors']
     for row in rows[1:]:
@@ -50,7 +60,9 @@ def load_from_dict(server, data:dict):
                                   read_queue=mp.Queue(),
                                   write_queue=mp.Queue() if item.get('is_read_only') == 0 else None,
                                   log_queue=server.log_queue if server else None,
-                                  description=item.get('description'))
+                                  description=item.get('description'),
+                                  metrics_queue=server.metrics_queue if server else None
+                                  )
         connectors[connector.name] = connector
 
     #load connectors

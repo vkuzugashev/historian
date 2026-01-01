@@ -21,8 +21,8 @@ class ConnectorModbus(ConnectorABC):
     client:ModbusClient=None
     
 
-    def __init__(self, log, name, cycle, connection_string, tags, read_queue, is_read_only=True, write_queue=None, description=None):
-        super().__init__(log, name, cycle, connection_string, tags, read_queue, is_read_only, write_queue, description)
+    def __init__(self, log, name, cycle, connection_string, tags, read_queue, is_read_only=True, write_queue=None, description=None, metrics_queue=None):
+        super().__init__(log, name, cycle, connection_string, tags, read_queue, is_read_only, write_queue, description, metrics_queue)
         try:
             self.host=self.connection_string['host']
             self.port=int(self.connection_string['port'])
