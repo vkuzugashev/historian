@@ -133,7 +133,12 @@ def stop_processes():
     for key, process in processes.items():
         process.terminate()
         process.join()
-        log.info(f'process {key}, stoped')    
+        log.info(f'process {key}, stoped')   
+
+def check_processes():
+    for key, process in processes.items():
+        if not process.is_alive():
+            raise Exception(f'process {key} stoped')            
 
 def start_connectors():
     global connectors
@@ -192,6 +197,7 @@ def run():
 
     try:
         while True:
+            check_processes()
             scan_cycle()
             api_command_handler()
             time.sleep(0.1)

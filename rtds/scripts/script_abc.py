@@ -1,6 +1,8 @@
 from abc import ABC
 from datetime import datetime, timezone
+import time
 from loggers import logger
+import metrics.server as metrics
 
 class ScriptABC(ABC):
     log = None
@@ -34,10 +36,27 @@ class ScriptABC(ABC):
 
     def run(self):
         if self.is_active and (datetime.now(timezone.utc) - self.last_run).total_seconds() > self.cycle:
+            start_time = time.time()
             try:
                 self.last_run = datetime.now(timezone.utc)
                 exec(self.script_object)
                 self.log.debug(f'script {self.name} executed success')
+                if self.server and self.server.metrics_queue:
+                    self.server.metrics_queue.put(
+                        metrics.Metric(
+                            name=metrics.MetricEnum.SCRIPT_DURATION,
+                            labels=(self.name,'ok'),
+                            value=time.time() - start_time
+                        )
+                    )
             except Exception as e:
                 self.log.error(f'script {self.name} executed  with error', e)
+                if self.server and self.server.metrics_queue:
+                    self.server.metrics_queue.put(
+                        metrics.Metric(
+                            name=metrics.MetricEnum.SCRIPT_DURATION,
+                            labels=(self.name,'error'),
+                            value=time.time() - start_time
+                        )
+                    )
     

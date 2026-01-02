@@ -1,4 +1,6 @@
 from enum import Enum
+import time
+from typing import Iterable
 from prometheus_client import start_http_server, Counter, Histogram
 from loggers import logger
 
@@ -9,11 +11,12 @@ class MetricEnum(Enum):
     SCAN_CYCLE_LATENCY=0
     TAG_COUNTER=1
     CONNECTOR_COUNTER=2
-    CONNECTOR_DURATION_CYCLE=3
-    STORE_DURATION_CYCLE=4
+    CONNECTOR_DURATION=3
+    STORE_DURATION=4
+    SCRIPT_DURATION=5
 
 class Metric:
-    def __init__(self, name: MetricEnum, value, labels=None):
+    def __init__(self, name: MetricEnum, value: float, labels: Iterable[str]=None):
         self.name = name
         self.value = value
         self.labels = labels
@@ -35,15 +38,39 @@ def run(port=4000, log_queue=None, metrics_queue=None):    # Start up the server
 
 
 # метрики общие
-SCAN_CYCLE_LATENCY = Histogram('scan_cycle_latency_seconds', 'latency scan cycle')
+SCAN_CYCLE_LATENCY = Histogram(
+    name='scan_cycle_latency',
+    documentation='latency scan cycle',
+    unit='sec',
+    buckets=(0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05)
+)
 TAG_COUNTER = Counter('tag_counter', 'Tags count')
 CONNECTOR_COUNTER = Counter('connector_counter', 'Connectors count')
 
 # метрики коннекторов
-CONNECTOR_DURATION_CYCLE = Histogram('connector_duration_cycle_seconds', 'Duration connector cycle', ['connector'])
-
+CONNECTOR_DURATION = Histogram(
+    name='connector_duration',
+    documentation='Duration connector',
+    labelnames=['connector','method', 'status'],
+    unit='sec',
+    buckets=(0.0001, 0.0005, 0.01, 0.5, 1.05, 2.05, 3.05, 4.05, 5.05, 10.05, 15.05, 30.05, 60.05, 90.05, 120.05)
+)
+# метрики скриптов
+SCRIPT_DURATION = Histogram(
+    name='scrypt_duration',
+    documentation='Duration store',
+    labelnames=['script', 'status'],
+    unit='sec',
+    buckets=(0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1)
+)
 # метрики хранилища
-STORE_DURATION_CYCLE = Histogram('store_duration_cycle_seconds', 'Duration store cycle')
+STORE_DURATION = Histogram(
+    name='store_duration_cycle',
+    documentation='Duration store cycle',
+    labelnames=['status'],
+    unit='sec',
+    buckets=(0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005)
+)
 
 def handle_metrics():
     if shared_metrics_queue:
@@ -52,18 +79,24 @@ def handle_metrics():
                 metric = shared_metrics_queue.get()
                 if isinstance(metric, Metric):
                     log.debug(f'handle_metrics: {metric}')
-                    
-                    match metric.name:
-                        case MetricEnum.SCAN_CYCLE_LATENCY:
-                            SCAN_CYCLE_LATENCY.observe(metric.value)
-                        case MetricEnum.TAG_COUNTER:
-                            TAG_COUNTER.inc(metric.value)
-                        case MetricEnum.CONNECTOR_COUNTER:
-                            CONNECTOR_COUNTER.inc(metric.value)
-                        case MetricEnum.CONNECTOR_DURATION_CYCLE:
-                            CONNECTOR_DURATION_CYCLE.labels(metric.labels).observe(metric.value)
-                        case MetricEnum.STORE_DURATION_CYCLE:
-                            STORE_DURATION_CYCLE.observe(metric.value)
+                    try:                    
+                        match metric.name:
+                            case MetricEnum.SCAN_CYCLE_LATENCY:
+                                SCAN_CYCLE_LATENCY.observe(metric.value)
+                            case MetricEnum.TAG_COUNTER:
+                                TAG_COUNTER.inc(metric.value)
+                            case MetricEnum.CONNECTOR_COUNTER:
+                                CONNECTOR_COUNTER.inc(metric.value)
+                            case MetricEnum.CONNECTOR_DURATION:
+                                CONNECTOR_DURATION.labels(*metric.labels).observe(metric.value)
+                            case MetricEnum.STORE_DURATION:
+                                STORE_DURATION.labels(*metric.labels).observe(metric.value)
+                            case MetricEnum.SCRIPT_DURATION:
+                                SCRIPT_DURATION.labels(*metric.labels).observe(metric.value)
+                    except Exception as e:
+                        log.error(f'fail set metric: {metric.name}, {e}')
+            else:
+                time.sleep(0.1)
 
 
 

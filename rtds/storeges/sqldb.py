@@ -422,7 +422,7 @@ def run(log_queue, store_queue, metrics_queue):
             
         # получить значение из очереди если есть
         if store_queue.empty():
-            time.sleep(0.01)
+            time.sleep(0.1)
             continue
 
         value = store_queue.get()
@@ -465,15 +465,20 @@ def run(log_queue, store_queue, metrics_queue):
                 if len(batch) >= batch_size or len(currents) >= batch_size or store_queue.empty():
                     delete_old_history()
 
-            except Exception as e:
-                log.error(f'fail store value: {value}, error: {e}')
-            finally:
-                duration = time.time() - start_time
                 metrics_queue.put(
                     metrics.Metric(
-                        name    = metrics.MetricEnum.STORE_DURATION_CYCLE,
-                        labels  = 'store',
-                        value   = duration
+                        name    = metrics.MetricEnum.STORE_DURATION,
+                        labels  = ['ok'],
+                        value   = time.time() - start_time
+                    )
+                )
+            except Exception as e:
+                log.error(f'fail store value: {value}, error: {e}')
+                metrics_queue.put(
+                    metrics.Metric(
+                        name    = metrics.MetricEnum.STORE_DURATION,
+                        labels  = ['error'],
+                        value   = time.time() - start_time
                     )
                 )
 

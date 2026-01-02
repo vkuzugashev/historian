@@ -16,6 +16,7 @@ class ConnectorABC(ABC):
     is_read_only:bool = None
     description:str = None
     metrics_queue:Queue = None
+    start_cycle_time:float = None
 
     def __init__(self, log, name, cycle, connection_string, tags, read_queue, is_read_only=True, write_queue=None, description=None, metrics_queue=None):
         self.log = log
@@ -43,28 +44,64 @@ class ConnectorABC(ABC):
         pass
 
     def __pause(self):
-        self.log.debug(f'pause: {self.cycle} sec')
-        time.sleep(self.cycle)    
+        pause = self.cycle - (time.time() - self.start_cycle_time)
+        self.log.debug(f'pause: {pause} sec')
+        if pause > 0:
+            time.sleep(pause)    
 
     def run(self):
         while True:
-            start_time = time.time()
+            self.start_cycle_time = time.time()
             try:
+                start_time = time.time()
                 self.open()
-                self.read()
-                self.__pause()
-                self.write()
-            finally:
-                self.close()
-                duration = time.time() - start_time
                 if self.metrics_queue:
                     self.metrics_queue.put(
                         metrics.Metric(
-                            name   = metrics.MetricEnum.CONNECTOR_DURATION_CYCLE, 
-                            labels = [self.name],
-                            value  = duration
+                            name   = metrics.MetricEnum.CONNECTOR_DURATION, 
+                            labels = [self.name, 'open', 'ok'],
+                            value  = time.time() - start_time
                         )
                     )
-                else:
-                    self.log.warning('no metrics_queue')
+                start_time = time.time()
+                self.read()
+                if self.metrics_queue:
+                    self.metrics_queue.put(
+                        metrics.Metric(
+                            name   = metrics.MetricEnum.CONNECTOR_DURATION, 
+                            labels = [self.name, 'read', 'ok'],
+                            value  = time.time() - start_time
+                        )
+                    )
+                start_time = time.time()
+                self.write()
+                if self.metrics_queue:
+                    self.metrics_queue.put(
+                        metrics.Metric(
+                            name   = metrics.MetricEnum.CONNECTOR_DURATION, 
+                            labels = [self.name, 'write', 'ok'],
+                            value  = time.time() - start_time
+                        )
+                    )
+                self.__pause()
+
+                if self.metrics_queue:
+                    self.metrics_queue.put(
+                        metrics.Metric(
+                            name   = metrics.MetricEnum.CONNECTOR_DURATION, 
+                            labels = [self.name, 'cycle', 'ok'],
+                            value  = time.time() - self.start_cycle_time
+                        )
+                    )
+            except Exception as e:
+                if self.metrics_queue:
+                    self.metrics_queue.put(
+                        metrics.Metric(
+                            name   = metrics.MetricEnum.CONNECTOR_DURATION, 
+                            labels = [self.name, 'cycle', 'error'],
+                            value  = time.time() - self.start_cycle_time
+                        )
+                    )
+            finally:
+                self.close()
 
