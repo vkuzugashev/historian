@@ -7,12 +7,12 @@ import multiprocessing as mp
 sys.path.extend(['.','..'])
 
 from loggers import logger
-import configs.config_ods as config_ods
+from configs import config_ods
 from models.tag import Tag, TagValue 
 from models.command import CommandEnum, Command 
-import storeges.sqldb as store
-import api.server as api
-import metrics.server as metrics
+from store import sqldb as store
+from api import server as api
+from metrics import server as metrics
 
 
 tags = {}

@@ -7,18 +7,20 @@ from flask_swagger import swagger
 from flask_swagger_ui import get_swaggerui_blueprint
 from werkzeug.utils import secure_filename
 import multiprocessing as mp
+from dotenv import load_dotenv
 
+load_dotenv()
 
 sys.path.extend(['.','..'])
 
 from loggers import logger
 from configs import config_ods
-from storeges import sqldb as store
+from store import sqldb as store
 from models.command import CommandEnum, Command
 
-# dictConfig({'version': 1, 'root': {'level': 'DEBUG'}})
-
 app = Flask(__name__)
+
+API_PORT = int(os.getenv('API_PORT', '5001'))
 
 # Очередь для обмена данными между процессами
 API_COMMAND_QUEUE: mp.Queue = None
@@ -30,7 +32,6 @@ ALLOWED_EXTENSIONS = {"ods"}
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
 SWAGGER_URL = '/api/docs'  # URL for exposing Swagger UI (without trailing '/')
-#API_URL = 'http://petstore.swagger.io/v2/swagger.json'  # Our API url (can of course be a local resource)
 API_URL = '/spec'  # Our API url (can of course be a local resource)
 
 @app.route(API_URL)
@@ -285,7 +286,7 @@ def run(log_queue=None, api_queue=None, metrics_queue=None):
    app.logger.handlers.clear()  # убираем дефолтные хэндлеры
    app.logger = custom_logger
    app.logger.propagate = False  # важно: не дублировать в root-логгер
-   app.run(port=5001)
+   app.run(port=API_PORT)
 
 if __name__ == '__main__':
   run()

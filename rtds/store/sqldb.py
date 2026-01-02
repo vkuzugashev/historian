@@ -14,7 +14,7 @@ from models.tag import Tag as DTag, TagType, TagValue, get_tag_type, get_tag_val
 from connectors.connector_factory import get_connector
 from scripts.script import Script as DScript
 from loggers import logger
-import metrics.server as metrics
+from metrics import server as metrics
 
 load_dotenv()
 
