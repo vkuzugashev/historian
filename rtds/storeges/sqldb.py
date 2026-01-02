@@ -18,7 +18,7 @@ import metrics.server as metrics
 
 load_dotenv()
 
-log = logger.get_logger('storage')
+log = None
 
 BATCH_SIZE = int(os.getenv('STORE_BATCH_SIZE', '100'))
 STORE_HISTORY_HOURS = int(os.getenv('STORE_HISTORY_HOURS', '24'))
@@ -382,7 +382,11 @@ def get_state():
                 "vl": state.value,
             }
 
-def init_db():
+def init_db(log_queue):
+    global log
+    if log_queue:
+        log = logger.get_logger('store', log_queue)
+
     engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     Base.metadata.create_all(engine)
     log.info('database initialized')

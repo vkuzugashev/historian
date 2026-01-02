@@ -8,10 +8,12 @@ from flask_swagger_ui import get_swaggerui_blueprint
 from werkzeug.utils import secure_filename
 import multiprocessing as mp
 
+
 sys.path.extend(['.','..'])
 
-import rtds.configs.config_ods as config_ods
-import storeges.sqldb as store
+from loggers import logger
+from configs import config_ods
+from storeges import sqldb as store
 from models.command import CommandEnum, Command
 
 # dictConfig({'version': 1, 'root': {'level': 'DEBUG'}})
@@ -278,7 +280,11 @@ def run(log_queue=None, api_queue=None, metrics_queue=None):
    if api_queue:
        API_COMMAND_QUEUE = api_queue
    
-  #  app.logger = logger.get_default('api', log_queue)
+   custom_logger = logger.get_logger('api', log_queue)
+   # Замена логгера Flask
+   app.logger.handlers.clear()  # убираем дефолтные хэндлеры
+   app.logger = custom_logger
+   app.logger.propagate = False  # важно: не дублировать в root-логгер
    app.run(port=5001)
 
 if __name__ == '__main__':

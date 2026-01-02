@@ -7,7 +7,7 @@ import multiprocessing as mp
 sys.path.extend(['.','..'])
 
 from loggers import logger
-import rtds.configs.config_ods as config_ods
+import configs.config_ods as config_ods
 from models.tag import Tag, TagValue 
 from models.command import CommandEnum, Command 
 import storeges.sqldb as store
@@ -20,12 +20,12 @@ connectors = {}
 scripts = {}
 processes = {}
 
-log_queue = mp.Queue(-1)
+log_queue = mp.Queue()
 store_queue = mp.Queue()
 api_command_queue = mp.Queue()
 metrics_queue = mp.Queue()
 
-log = logger.get_logger('server', log_queue)
+log = None 
 
 def add(tag):
     if isinstance(tag, Tag):
@@ -177,7 +177,7 @@ def scan_cycle():
     
 def run():
     
-    store.init_db()
+    store.init_db(log_queue)
     
     global connectors, tags
     connectors, tags, _ = load_config()
@@ -207,11 +207,13 @@ def run():
     stop_processes()
 
 if __name__ == '__main__':
-    
+
+    log = logger.get_logger('server', log_queue)
+
     # Создаем QueueListener для обработки очереди
     logger.start()
 
-    log.info(f'Example load configuration from file (ods): server.py config.ods')
+    log.info(f'Example load configuration from file (ods): python3 app/server.py config.ods')
     if len(sys.argv) > 1:
         log.info(f'load config from file: {sys.argv[1]}')
         configFile = os.path.join(str(Path(__name__).parent), sys.argv[1])
