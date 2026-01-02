@@ -8,23 +8,15 @@ from scripts.script import Script
 from connectors.connector_factory import get_connector
 from loggers import logger
 
-log = None
+log = logger.get_logger('config')
 
-def load_from_file(server:object, configFile: str):
-    global log
-    log = logger.get_default('config', server.log_queue)
-
+def load_from_file(configFile: str):
     log.info(f'Loading config from file: {configFile}')
     data = get_data(configFile)
-    return load_from_dict(server, data)
+    return load_from_dict(data)
 
 
-def load_from_dict(server:object, data:dict):
-    global log
-    
-    if log is None:
-        log = logger.get_default('config', server.log_queue)
-
+def load_from_dict(data:dict):
     log.info(f'Loading config from dict: {data}')
 
     connectors = {}
@@ -46,8 +38,6 @@ def load_from_dict(server:object, data:dict):
                   description=item.get('description'))
         tags[tag.name] = tag
     
-    log.warning(f'????  server={server is None} queue={server.metrics_queue is None}')
-
     #load connectors
     rows = data['Connectors']
     for row in rows[1:]:
@@ -57,11 +47,7 @@ def load_from_dict(server:object, data:dict):
                                   connection_string=item['connection_string'],
                                   tags=[(key, tag) for key, tag in tags.items() if tag.connector_name==item['name']],
                                   is_read_only=True if item.get('is_read_only') == 1 else False,
-                                  read_queue=mp.Queue(),
-                                  write_queue=mp.Queue() if item.get('is_read_only') == 0 else None,
-                                  log_queue=server.log_queue if server else None,
-                                  description=item.get('description'),
-                                  metrics_queue=server.metrics_queue if server else None
+                                  description=item.get('description')
                                   )
         connectors[connector.name] = connector
 
@@ -69,7 +55,7 @@ def load_from_dict(server:object, data:dict):
     rows = data['Scripts']
     for row in rows[1:]:
         item = dict(zip(rows[0], row))
-        script = Script(server=server,
+        script = Script(server=None,
                         name=item['name'],
                         cycle=item['cycle'],
                         script=item['script'],
@@ -155,5 +141,5 @@ def export_to_file(connectors, tags, scripts, configFile: str):
 
 if __name__ == '__main__':
     configFile = os.path.join(str(Path(__name__).parent), 'config.ods')
-    connectors, tags, scripts = load_from_file(server=None, configFile=configFile)
+    connectors, tags, scripts = load_from_file(configFile=configFile)
     print(f'Connectors: {len(connectors)}, Tags: {len(tags)}, Scripts: {len(scripts)}')

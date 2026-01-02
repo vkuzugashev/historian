@@ -24,7 +24,7 @@ class Metric:
 def run(port=4000, log_queue=None, metrics_queue=None):    # Start up the server to expose the metrics.    
     global log, shared_metrics_queue
 
-    log = logger.get_default('metrics', log_queue)
+    log = logger.get_logger('metrics', log_queue)
 
     if metrics_queue:
         shared_metrics_queue = metrics_queue
@@ -50,7 +50,7 @@ CONNECTOR_COUNTER = Counter('connector_counter', 'Connectors count')
 # метрики коннекторов
 CONNECTOR_DURATION = Histogram(
     name='connector_duration',
-    documentation='Duration connector',
+    documentation='connector methods duration',
     labelnames=['connector','method', 'status'],
     unit='sec',
     buckets=(0.0001, 0.0005, 0.01, 0.5, 1.05, 2.05, 3.05, 4.05, 5.05, 10.05, 15.05, 30.05, 60.05, 90.05, 120.05)
@@ -58,18 +58,18 @@ CONNECTOR_DURATION = Histogram(
 # метрики скриптов
 SCRIPT_DURATION = Histogram(
     name='scrypt_duration',
-    documentation='Duration store',
+    documentation='script execute duration',
     labelnames=['script', 'status'],
     unit='sec',
     buckets=(0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1)
 )
 # метрики хранилища
 STORE_DURATION = Histogram(
-    name='store_duration_cycle',
-    documentation='Duration store cycle',
-    labelnames=['status'],
+    name='store_duration',
+    documentation='store methods duration',
+    labelnames=['method','status'],
     unit='sec',
-    buckets=(0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005)
+    buckets=(0.005, 0.01, 0.05, 0.1, 0.5, 1)
 )
 
 def handle_metrics():

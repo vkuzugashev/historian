@@ -4,7 +4,7 @@ from logging.handlers import QueueHandler
 log_queue=None
 listener=None
 
-def get_default(name, logq=None):
+def get_logger(name, logq=None):
     global log_queue
            
     log = logging.getLogger(name)

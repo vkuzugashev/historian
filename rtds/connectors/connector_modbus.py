@@ -1,3 +1,4 @@
+from multiprocessing import Queue
 import queue
 from dataclasses import dataclass
 from pyModbusTCP.client import ModbusClient
@@ -18,11 +19,31 @@ class ConnectorModbus(ConnectorABC):
     timeout:float=30
     auto_open:bool=True
     auto_close:bool=True
-    client:ModbusClient=None
-    
+    client:ModbusClient=None   
 
-    def __init__(self, log, name, cycle, connection_string, tags, read_queue, is_read_only=True, write_queue=None, description=None, metrics_queue=None):
-        super().__init__(log, name, cycle, connection_string, tags, read_queue, is_read_only, write_queue, description, metrics_queue)
+    def __init__(self, 
+                 log, 
+                 name:str, 
+                 cycle:int, 
+                 connection_string:str, 
+                 tags, 
+                 read_queue:Queue=None, 
+                 is_read_only:bool=True, 
+                 write_queue:Queue=None, 
+                 description:str=None, 
+                 metrics_queue:Queue=None):
+        
+        super().__init__(log, 
+                         name, 
+                         cycle, 
+                         connection_string, 
+                         tags, 
+                         read_queue, 
+                         is_read_only,
+                         write_queue, 
+                         description, 
+                         metrics_queue)
+        
         try:
             self.host=self.connection_string['host']
             self.port=int(self.connection_string['port'])
@@ -120,7 +141,7 @@ but got:
         self.log.debug(f'write cycle processed')
 
 if __name__ == '__main__':
-    log = logger.get_default('ConnectorModbus') 
+    log = logger.get_logger('ConnectorModbus') 
     log.info('test begin')    
     tags = {}
     read_queue = queue.Queue()

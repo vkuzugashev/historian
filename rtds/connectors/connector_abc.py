@@ -18,7 +18,18 @@ class ConnectorABC(ABC):
     metrics_queue:Queue = None
     start_cycle_time:float = None
 
-    def __init__(self, log, name, cycle, connection_string, tags, read_queue, is_read_only=True, write_queue=None, description=None, metrics_queue=None):
+    def __init__(self, 
+                 log, 
+                 name:str, 
+                 cycle:int, 
+                 connection_string:str, 
+                 tags, 
+                 read_queue:Queue=None, 
+                 is_read_only:bool=True, 
+                 write_queue:Queue=None, 
+                 description:str=None, 
+                 metrics_queue:Queue=None):
+        
         self.log = log
         self.name = name
         self.cycle = cycle
@@ -63,6 +74,7 @@ class ConnectorABC(ABC):
                             value  = time.time() - start_time
                         )
                     )
+                
                 start_time = time.time()
                 self.read()
                 if self.metrics_queue:
@@ -73,6 +85,7 @@ class ConnectorABC(ABC):
                             value  = time.time() - start_time
                         )
                     )
+                
                 start_time = time.time()
                 self.write()
                 if self.metrics_queue:
@@ -83,6 +96,7 @@ class ConnectorABC(ABC):
                             value  = time.time() - start_time
                         )
                     )
+                
                 self.__pause()
 
                 if self.metrics_queue:
@@ -93,6 +107,7 @@ class ConnectorABC(ABC):
                             value  = time.time() - self.start_cycle_time
                         )
                     )
+            
             except Exception as e:
                 if self.metrics_queue:
                     self.metrics_queue.put(

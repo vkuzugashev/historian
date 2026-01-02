@@ -23,7 +23,7 @@ class ConnectorTest(ConnectorABC):
         self.log.debug(f'write cycle processed')
 
 if __name__ == '__main__':
-    log = logger.get_default('ConnectorTest')
+    log = logger.get_logger('ConnectorTest')
     log.info('test begin')    
     tags = {}
     read_queue = queue.Queue()

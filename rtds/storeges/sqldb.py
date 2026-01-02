@@ -5,7 +5,8 @@ from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime,
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from datetime import datetime, timedelta, timezone
-import sys
+import sys, os
+from dotenv import load_dotenv
 
 sys.path.extend(['.', '..'])
 
@@ -15,13 +16,16 @@ from scripts.script import Script as DScript
 from loggers import logger
 import metrics.server as metrics
 
-log = logger.get_default('storage')
+load_dotenv()
 
-batch_size = 50
-delete_old_history_hours = 24
-sql_engine_echo = False
+log = logger.get_logger('storage')
 
-DB_URL = 'sqlite:///data/history.db'
+BATCH_SIZE = int(os.getenv('STORE_BATCH_SIZE', '100'))
+STORE_HISTORY_HOURS = int(os.getenv('STORE_HISTORY_HOURS', '24'))
+SQL_ENGINE_ECHO = os.getenv('STORE_SQL_ENGINE_ECHO', 'false').lower() in ('true', '1', 'on','yes')
+DB_URL = os.getenv('STORE_DB_URL','sqlite:///data/history.db')
+
+metrics_queue = None
 
 class Base(DeclarativeBase):
     pass
@@ -84,7 +88,7 @@ class State(Base):
     description: Mapped[Optional[str]] = mapped_column(String(500))    
 
 def set_connectors(connectors:dict):
-    engine = create_engine(DB_URL, echo=sql_engine_echo)
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     with Session(engine) as session: 
         for item in connectors.values():
             log.debug(f'save connector item: {item}')
@@ -102,7 +106,7 @@ def set_connectors(connectors:dict):
             session.commit()
 
 def set_tags(tags:dict):
-    engine = create_engine(DB_URL, echo=sql_engine_echo)
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     with Session(engine) as session: 
         for item in tags.values():
             log.debug(f'save tag item: {item}')
@@ -123,7 +127,7 @@ def set_tags(tags:dict):
             session.commit()
 
 def set_scripts(scripts:dict):
-    engine = create_engine(DB_URL, echo=sql_engine_echo)
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     with Session(engine) as session: 
         for item in scripts.values():
             log.debug(f'save script item: {item}')
@@ -148,7 +152,7 @@ def get_config(server):
     connectors = {}
     scripts = {}
 
-    engine = create_engine(DB_URL, echo=sql_engine_echo)
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     with Session(engine) as session:
         for item in session.scalars(select(Tag)).all():
             tag = DTag(name=item.id, 
@@ -196,7 +200,7 @@ def set_config(connectors, tags, scripts):
     """
     Сохранить конфигурацию в БД
     """
-    engine = create_engine(DB_URL, echo=sql_engine_echo)
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
 
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)    
@@ -219,7 +223,7 @@ def export_config():
     connectors = {}
     scripts = {}
 
-    engine = create_engine(DB_URL, echo=sql_engine_echo)
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     with Session(engine) as session:
         for item in session.scalars(select(Tag)).all():
             tag = { 
@@ -270,7 +274,7 @@ def get_history(start_time, size):
         else:
             start_time = datetime.now(timezone.utc) - timedelta(days=1)
 
-    engine = create_engine(DB_URL, echo=sql_engine_echo)
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     with Session(engine) as session:
         if start_time:
             query = (
@@ -299,7 +303,7 @@ def get_current():
     """
     Получить текущие значения тегов
     """
-    engine = create_engine(DB_URL, echo=sql_engine_echo)
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     with Session(engine) as session:
         query = (
             select(Current, Tag)
@@ -321,7 +325,7 @@ def get_current():
             }
 
 def set_state(connectors, tags, scripts):
-    engine = create_engine(DB_URL, echo=sql_engine_echo)
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     
     with Session(engine) as session:
         # удалить старые записи
@@ -367,7 +371,7 @@ def get_state():
     """
     Получить текущие состояние системы
     """
-    engine = create_engine(DB_URL, echo=sql_engine_echo)
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     with Session(engine) as session:
         query = select(State)
         for state in session.scalars(query).all():
@@ -379,44 +383,62 @@ def get_state():
             }
 
 def init_db():
-    engine = create_engine(DB_URL, echo=sql_engine_echo)
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     Base.metadata.create_all(engine)
     log.info('database initialized')
 
 def delete_old_history():
-    if delete_old_history_hours:
-        engine = create_engine(DB_URL, echo=sql_engine_echo)
+    if STORE_HISTORY_HOURS:
+        engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
         with Session(engine) as session:
             # удалить старые строки из history
-            delete_time = datetime.now(timezone.utc) - timedelta(hours=delete_old_history_hours)
+            delete_time = datetime.now(timezone.utc) - timedelta(hours=STORE_HISTORY_HOURS)
             query = (
                 delete(History)
                 .where(History.tag_time < delete_time)
             )
+            start_time = time.time()
             try:
                 result = session.execute(query)  
                 deleted_count = result.rowcount
                 session.commit()
                 
                 if deleted_count > 0:
-                    log.info(f'delete old history: {deleted_count} rows')
+                    log.debug(f'deleted old history: {deleted_count} rows')
                 else:
-                    log.info(f'no old history')
+                    log.debug(f'no old history')
+
+                metrics_queue.put(
+                    metrics.Metric(
+                        name    = metrics.MetricEnum.STORE_DURATION,
+                        labels  = ['delete_old_history','ok'],
+                        value   = time.time() - start_time
+                    )
+                )
             except Exception as e:
                 session.rollback()
                 log.error(f'Error deleting old history: {e}')
+                metrics_queue.put(
+                    metrics.Metric(
+                        name    = metrics.MetricEnum.STORE_DURATION,
+                        labels  = ['delete_old_history','error'],
+                        value   = time.time() - start_time
+                    )
+                )
 
 
-
-def run(log_queue, store_queue, metrics_queue):
-    global log
+def run(log_queue, store_queue, metricsq):
+    global log, metrics_queue
 
     batch = []
     currents = []
     
     if log_queue:
-        log = logger.get_default('store', log_queue)
+        log = logger.get_logger('store', log_queue)
         log.info('store process started')
+    
+    if metricsq:
+        metrics_queue = metricsq
 
     while True:
             
@@ -428,7 +450,7 @@ def run(log_queue, store_queue, metrics_queue):
         value = store_queue.get()
             
         if isinstance(value, TagValue):
-            start_time = time.time()
+
             try:
                 history = History(
                     tag_id=value.name,
@@ -453,52 +475,57 @@ def run(log_queue, store_queue, metrics_queue):
                 
                 currents.append(current)
 
-                if len(batch) >= batch_size or store_queue.empty():
+                if len(batch) >= BATCH_SIZE or store_queue.empty():
                     batch_write(batch)                        
                     batch = []
                 
-                if len(currents) >= batch_size or store_queue.empty():
+                if len(currents) >= BATCH_SIZE or store_queue.empty():
                     currents_write(currents)                        
                     currents = []
 
                 # удалить старые записи из history
-                if len(batch) >= batch_size or len(currents) >= batch_size or store_queue.empty():
+                if len(batch) >= BATCH_SIZE or len(currents) >= BATCH_SIZE or store_queue.empty():
                     delete_old_history()
 
-                metrics_queue.put(
-                    metrics.Metric(
-                        name    = metrics.MetricEnum.STORE_DURATION,
-                        labels  = ['ok'],
-                        value   = time.time() - start_time
-                    )
-                )
             except Exception as e:
+                if e is KeyboardInterrupt:
+                    log.info('store process stopped')
+                    break
                 log.error(f'fail store value: {value}, error: {e}')
-                metrics_queue.put(
-                    metrics.Metric(
-                        name    = metrics.MetricEnum.STORE_DURATION,
-                        labels  = ['error'],
-                        value   = time.time() - start_time
-                    )
-                )
 
         else:
             log.warning(f'Unsupport type: {value}')
         
 
 def batch_write(batch):
-    engine = create_engine(DB_URL, echo=sql_engine_echo)
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     with Session(engine) as session:
+        start_time = time.time()
         try:
             session.bulk_save_objects(batch)
             session.commit()
-            log.info(f'success stored batch: {len(batch)}')
+            log.debug(f'success stored batch: {len(batch)}')
+            metrics_queue.put(
+                metrics.Metric(
+                    name    = metrics.MetricEnum.STORE_DURATION,
+                    labels  = ['batch_write','ok'],
+                    value   = time.time() - start_time
+                )
+            )
         except Exception as e:
             log.error(f'fail store batch: {len(batch)}, error: {e}')
+            metrics_queue.put(
+                metrics.Metric(
+                    name    = metrics.MetricEnum.STORE_DURATION,
+                    labels  = ['batch_write','error'],
+                    value   = time.time() - start_time
+                )
+            )
 
 def currents_write(items):
-    engine = create_engine(DB_URL, echo=sql_engine_echo)
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     with Session(engine) as session:
+        start_time = time.time()
         try:
             #Атомарный UPSERT для всех записей
             stmt = sqlite_insert(Current).values(items)
@@ -517,9 +544,25 @@ def currents_write(items):
             session.execute(on_conflict_stmt)
             session.commit()
 
-            log.info(f'success stored current: {len(items)}')        
+            log.debug(f'success stored current: {len(items)}')
+
+            metrics_queue.put(
+                metrics.Metric(
+                    name    = metrics.MetricEnum.STORE_DURATION,
+                    labels  = ['currents_write','ok'],
+                    value   = time.time() - start_time
+                )
+            )
+
         except Exception as e:
             log.error(f'fail store current: {len(items)}, error: {e}')
+            metrics_queue.put(
+                metrics.Metric(
+                    name    = metrics.MetricEnum.STORE_DURATION,
+                    labels  = ['currents_write','error'],
+                    value   = time.time() - start_time
+                )
+            )
 
 if __name__ == '__main__':    
     engine = create_engine(DB_URL, echo=True)

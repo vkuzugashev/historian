@@ -10,19 +10,16 @@ import multiprocessing as mp
 
 sys.path.extend(['.','..'])
 
-import configs.file as config
+import rtds.configs.config_ods as config_ods
 import storeges.sqldb as store
-from loggers import logger
 from models.command import CommandEnum, Command
 
 # dictConfig({'version': 1, 'root': {'level': 'DEBUG'}})
 
 app = Flask(__name__)
-#app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///execution.db'
-#app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Очередь для обмена данными между процессами
-api_command_queue: mp.Queue = None
+API_COMMAND_QUEUE: mp.Queue = None
 
 # Путь для сохранения загруженных файлов
 UPLOAD_FOLDER = "uploads"
@@ -82,7 +79,7 @@ def get_config():
         connectors, tags, scripts = store.export_config()
         # получить имя временного файла
         config_file_path = tempfile.gettempdir() + "/config.ods"
-        config.export_to_file(connectors, tags, scripts, config_file_path)
+        config_ods.export_to_file(connectors, tags, scripts, config_file_path)
         if os.path.exists(config_file_path):
             # выгрузить файл клиенту
             if request.method == 'GET':
@@ -137,7 +134,7 @@ def set_config():
         file.save(configFile)
 
         # Загрузка файла
-        connectors, tags, scripts = config.load_from_file(None, configFile)
+        connectors, tags, scripts = config_ods.load_from_file(configFile)
         store.set_config(connectors, tags, scripts)
 
         return {"status": "ok"}, 201
@@ -157,10 +154,10 @@ def reload():
           200:
             description: RTDS reload success
     """
-    global api_command_queue
+    global API_COMMAND_QUEUE
     
-    if api_command_queue is not None:
-      api_command_queue.put(Command(CommandEnum.RELOAD))
+    if API_COMMAND_QUEUE is not None:
+      API_COMMAND_QUEUE.put(Command(CommandEnum.RELOAD))
 
     return {'status': 'OK'}
 
@@ -276,12 +273,12 @@ def get_state():
         return {'error': error_message}, 400
 
 def run(log_queue=None, api_queue=None, metrics_queue=None):
-   global api_command_queue   
+   global API_COMMAND_QUEUE   
    
    if api_queue:
-       api_command_queue = api_queue
+       API_COMMAND_QUEUE = api_queue
    
-   app.logger = logger.get_default('api', log_queue)
+  #  app.logger = logger.get_default('api', log_queue)
    app.run(port=5001)
 
 if __name__ == '__main__':

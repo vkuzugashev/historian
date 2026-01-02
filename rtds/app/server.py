@@ -7,7 +7,7 @@ import multiprocessing as mp
 sys.path.extend(['.','..'])
 
 from loggers import logger
-import configs.file as config
+import rtds.configs.config_ods as config_ods
 from models.tag import Tag, TagValue 
 from models.command import CommandEnum, Command 
 import storeges.sqldb as store
@@ -25,7 +25,7 @@ store_queue = mp.Queue()
 api_command_queue = mp.Queue()
 metrics_queue = mp.Queue()
 
-log = logger.get_default('server', log_queue)
+log = logger.get_logger('server', log_queue)
 
 def add(tag):
     if isinstance(tag, Tag):
@@ -215,12 +215,10 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         log.info(f'load config from file: {sys.argv[1]}')
         configFile = os.path.join(str(Path(__name__).parent), sys.argv[1])
-        connectors, tags, scripts = config.load_from_file(server=sys.modules[__name__], configFile=configFile)
+        connectors, tags, scripts = config_ods.load_from_file(configFile=configFile)
         log.info(f'Connectors: {len(connectors)}, Tags: {len(tags)}, Scripts: {len(scripts)}')
         store.set_config(connectors, tags, scripts)
-
-    log.info(store.DB_URL)
-    
+   
     run()
     
     logger.stop()

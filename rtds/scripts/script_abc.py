@@ -16,7 +16,7 @@ class ScriptABC(ABC):
     description:str = None
 
     def __init__(self, server, name, cycle, script, is_active=False, description=None):
-        self.log = logger.get_default(name, server.log_queue if server else None)
+        self.log = logger.get_logger(name, server.log_queue if server else None)
         self.server = server
         self.name = name
         self.cycle = cycle
