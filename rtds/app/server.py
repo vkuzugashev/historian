@@ -13,6 +13,7 @@ from models.command import CommandEnum, Command
 from store import sqldb as store
 from api import server as api
 from metrics import server as metrics
+from producers import kafka_producer as producer
 
 
 tags = {}
@@ -98,6 +99,14 @@ def metrics_run(log_queue, metrics_queue):
         metrics.run(4000, log_queue, metrics_queue)
     except Exception as e:
         log.error(f'metrics process stoped, error: {e}')
+
+def producer_run(log_queue, metrics_queue):
+    log.info('producer process started')
+
+    try:
+        producer.run(log_queue, metrics_queue)
+    except Exception as e:
+        log.error(f'producer process stoped, error: {e}')
 
 def connector_run(connector):
     try:
@@ -185,6 +194,7 @@ def run():
     start_process(process_name='storage', target=storage_run, args=(log_queue, store_queue, metrics_queue, ))
     start_process(process_name='api', target=api_run, args=(log_queue, api_command_queue, metrics_queue, ))  
     start_process(process_name='metrics', target=metrics_run, args=(log_queue, metrics_queue,))  
+    start_process(process_name='producer', target=producer_run, args=(log_queue, metrics_queue,))  
 
     start_connectors()
 

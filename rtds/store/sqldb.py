@@ -1,7 +1,7 @@
 import multiprocessing as mp
 import time
 from typing import Optional
-from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime, Text, select, delete
+from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime, Text, select, delete, and_
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from datetime import datetime, timedelta, timezone
@@ -63,8 +63,9 @@ class Tag(Base):
 
 class History(Base):
     __tablename__ = 'history'
-    tag_id: Mapped[str] = mapped_column(String(10), primary_key=True)
-    tag_time: Mapped[datetime] = mapped_column(DateTime, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tag_time: Mapped[datetime] = mapped_column(DateTime, index=True)
+    tag_id: Mapped[str] = mapped_column(String(10), index=True)
     status: Mapped[int] = mapped_column(Integer)    
     bool_value: Mapped[Optional[bool]] = mapped_column(Boolean)    
     int_value: Mapped[Optional[int]] = mapped_column(Integer)    
@@ -395,14 +396,31 @@ def delete_old_history():
     if STORE_HISTORY_HOURS:
         engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
         with Session(engine) as session:
-            # удалить старые строки из history
-            delete_time = datetime.now(timezone.utc) - timedelta(hours=STORE_HISTORY_HOURS)
-            query = (
-                delete(History)
-                .where(History.tag_time < delete_time)
-            )
+        
             start_time = time.time()
             try:
+                state_query = (
+                    select(State)
+                    .filter(State.id == 'producer_last_id')
+                )
+                state = session.scalars(state_query).one_or_none()
+
+                # удалить старые строки из history
+                delete_time = datetime.now(timezone.utc) - timedelta(hours=STORE_HISTORY_HOURS)
+                if state and state.value:
+                    last_id = int(state.value)
+                    query = (
+                        delete(History)
+                        .where(
+                            and_(History.tag_time < delete_time, History.id < last_id)
+                        )
+                    )
+                else:
+                    query = (
+                        delete(History)
+                        .where(History.tag_time < delete_time)
+                    )
+            
                 result = session.execute(query)  
                 deleted_count = result.rowcount
                 session.commit()
