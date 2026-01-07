@@ -42,6 +42,9 @@ class ConnectorABC(ABC):
         self.connection_string = dict(map(str.strip, sub.split('=', 1)) for sub in connection_string.split(';') if '=' in sub)
         self.metrics_queue = metrics_queue
 
+        self.log.info(f'loaded {len(self.tags)} tags')
+
+
     def open(self):
         pass
 
