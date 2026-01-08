@@ -75,7 +75,7 @@ def send_history_batch():
             rows = session.scalars(stmt).all()
 
             if not rows:
-                log.info("No new history records to send.")
+                log.debug("No new history records to send.")
                 return
 
             # Подготовка данных для Kafka
