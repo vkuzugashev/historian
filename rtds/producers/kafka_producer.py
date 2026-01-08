@@ -8,10 +8,12 @@ from kafka import KafkaProducer
 import json
 from dotenv import load_dotenv
 
+
 sys.path.extend(['.','..'])
 
 from loggers import logger
 from store.sqldb import History, State
+from metrics import server as metrics
 
 load_dotenv()
 
@@ -27,6 +29,7 @@ BATCH_SIZE = int(os.getenv('KAFKA_BATCH_SIZE', '100'))  # Количество �
 
 engine = None
 producer = None
+shared_metrics_queue = None
 
 def init():
     global engine, producer
@@ -49,6 +52,8 @@ def send_history_batch():
     """
     with Session(engine) as session:
         try:
+            start_time = time.time()
+
             # Получаем последний отправленный ID из State
             state = session.execute(
                 select(State).where(State.id=='producer_last_id')).scalar_one_or_none()
@@ -106,10 +111,25 @@ def send_history_batch():
             session.commit()
 
             log.debug(f"Sent {len(messages)} history records to Kafka. Last ID: {max_id}")
-
+            if shared_metrics_queue:
+                shared_metrics_queue.put(
+                    metrics.Metric(
+                        name = metrics.MetricEnum.KAFKA_PRODUCER_DURATION, 
+                        labels = ['ok'],
+                        value  = time.time() - start_time
+                    )
+                )
         except Exception as e:
             session.rollback()
             log.error(f"Error sending history batch: {e}", exc_info=True)
+            if shared_metrics_queue:
+                shared_metrics_queue.put(
+                    metrics.Metric(
+                        name = metrics.MetricEnum.KAFKA_PRODUCER_DURATION, 
+                        labels = ['error'],
+                        value  = time.time() - start_time
+                    )
+                )
             raise
 
 def success_callback(records):
@@ -121,15 +141,14 @@ def error_callback(exception):
 def run(log_queue=None, metrics_queue=None):    # Start up the server to expose the metrics.    
     global log, shared_metrics_queue
 
-    log = logger.get_logger('producer', log_queue)
-
     if metrics_queue:
         shared_metrics_queue = metrics_queue
 
+    log = logger.get_logger('producer', log_queue)
     log.info(f'Kafka producer started: KAFKA_BOOTSTRAP_SERVERS={KAFKA_BOOTSTRAP_SERVERS}, KAFKA_TOPIC={KAFKA_TOPIC}')    
+
     
     try:
-
         init()
         while True:        
             send_history_batch()

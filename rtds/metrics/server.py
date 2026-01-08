@@ -14,6 +14,7 @@ class MetricEnum(Enum):
     CONNECTOR_DURATION=3
     STORE_DURATION=4
     SCRIPT_DURATION=5
+    KAFKA_PRODUCER_DURATION=6
 
 class Metric:
     def __init__(self, name: MetricEnum, value: float, labels: Iterable[str]=None):
@@ -71,6 +72,15 @@ STORE_DURATION = Histogram(
     unit='sec',
     buckets=(0.005, 0.01, 0.05, 0.1, 0.5, 1)
 )
+# метрики kafka producer
+KAFKA_PRODUCER_DURATION = Histogram(
+    name='kafka_producer_duration',
+    documentation='kafka producer methods duration',
+    labelnames=['status'],
+    unit='sec',
+    buckets=(0.005, 0.01, 0.05, 0.1, 0.5, 1)
+)
+
 
 def handle_metrics():
     if shared_metrics_queue:
@@ -93,6 +103,8 @@ def handle_metrics():
                                 STORE_DURATION.labels(*metric.labels).observe(metric.value)
                             case MetricEnum.SCRIPT_DURATION:
                                 SCRIPT_DURATION.labels(*metric.labels).observe(metric.value)
+                            case MetricEnum.KAFKA_PRODUCER_DURATION:
+                                KAFKA_PRODUCER_DURATION.labels(*metric.labels).observe(metric.value)
                     except Exception as e:
                         log.error(f'fail set metric: {metric.name}, {e}')
             else:
