@@ -96,9 +96,8 @@ def send_history_batch():
                 max_id = row.id  # Обновляем до последней временной метки
 
             # Отправка в Kafka
-            message = json.dumps(messages, default=str)
             log.debug(f'Sending message: count={len(messages)}')
-            producer.send(KAFKA_TOPIC, value=message).add_callback(success_callback).add_errback(error_callback)
+            producer.send(KAFKA_TOPIC, value=messages).add_callback(success_callback).add_errback(error_callback)
             producer.flush()  # Ждём подтверждения отправки
 
             # Обновляем State
