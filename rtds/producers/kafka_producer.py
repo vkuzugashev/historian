@@ -25,13 +25,22 @@ KAFKA_BOOTSTRAP_SERVERS = [host.strip() for host in os.getenv('KAFKA_BOOTSTRAP_S
 KAFKA_TOPIC = os.getenv('KAFKA_TOPIC','history_data')
 BATCH_SIZE = int(os.getenv('KAFKA_BATCH_SIZE', '100'))  # Количество записей в одном пакете
 
-# Создаём engine
-engine = create_engine(DB_URL, echo=STORE_SQL_ENGINE_ECHO)
-producer = KafkaProducer(
-    bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-    value_serializer=lambda v: json.dumps(v, default=str).encode('utf-8')
-)
+engine = None
+producer = None
 
+def init():
+    global engine, producer
+    log.info('Создаём engine и producer')
+    # Создаём engine и producer
+    engine = create_engine(DB_URL, echo=STORE_SQL_ENGINE_ECHO)
+    producer = KafkaProducer(
+        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+        value_serializer=lambda v: json.dumps(v, default=str).encode('utf-8')    
+    )
+
+def close_resources():
+    log.info('Closing resources...')
+    producer.close()
 
 def send_history_batch():
     """
@@ -82,33 +91,32 @@ def send_history_batch():
                 max_id = row.id  # Обновляем до последней временной метки
 
             # Отправка в Kafka
-            msg = json.dumps(messages, default=str)
-            producer.send(KAFKA_TOPIC, value=msg)
-
+            message = json.dumps(messages, default=str)
+            log.debug(f'Sending message: count={len(messages)}')
+            producer.send(KAFKA_TOPIC, value=message).add_callback(success_callback).add_errback(error_callback)
             producer.flush()  # Ждём подтверждения отправки
 
             # Обновляем State
             # Атомарный UPSERT для всех записей
             stmt = sqlite_insert(State).values({'id':'producer_last_id', 'value': f'{max_id}'})
             on_conflict_stmt = stmt.on_conflict_do_update(
-                    index_elements=[State.id],
-                    set_={
-                        "value": stmt.excluded.value
-                    }
-                )            
+                index_elements=[State.id], set_={"value": stmt.excluded.value}
+            )            
             session.execute(on_conflict_stmt)
             session.commit()
 
-            log.info(f"Sent {len(messages)} history records to Kafka. Last ID: {max_id}")
+            log.debug(f"Sent {len(messages)} history records to Kafka. Last ID: {max_id}")
 
         except Exception as e:
             session.rollback()
             log.error(f"Error sending history batch: {e}", exc_info=True)
             raise
 
-        finally:
-            producer.close()
+def success_callback(records):
+    log.debug(f"Kafka delivery successful: partition={records.partition}, offset={records.offset}")
 
+def error_callback(exception):
+    log.debug(f"Failed to deliver Kafka message: {exception}")
 
 def run(log_queue=None, metrics_queue=None):    # Start up the server to expose the metrics.    
     global log, shared_metrics_queue
@@ -118,11 +126,20 @@ def run(log_queue=None, metrics_queue=None):    # Start up the server to expose 
     if metrics_queue:
         shared_metrics_queue = metrics_queue
 
-    log.info(f'Kafka producer started: KAFKA_BOOTSTRAP_SERVERS={KAFKA_BOOTSTRAP_SERVERS}')
+    log.info(f'Kafka producer started: KAFKA_BOOTSTRAP_SERVERS={KAFKA_BOOTSTRAP_SERVERS}, KAFKA_TOPIC={KAFKA_TOPIC}')    
+    
+    try:
 
-    while True:
-        send_history_batch()
-        time.sleep(1)  # Задержка между отправками
+        init()
+        while True:        
+            send_history_batch()
+            time.sleep(0.1)  # Задержка между отправками
+    except KeyboardInterrupt:
+        log.info('KeyboardInterrupt received. Exiting...')
+    except Exception as e:
+        log.error(f'Unhandled exception: {e}', exc_info=True)
+    finally:
+        close_resources()
 
 if __name__ == "__main__":
     log = logger.get_logger('kafka_producer')
