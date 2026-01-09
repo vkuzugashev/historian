@@ -29,7 +29,7 @@ class ConnectorTest(ConnectorABC):
                 func = source_params.get('func').lower()
                 period = float(source_params.get('period', 1))
                 scale = float(source_params.get('scale', 1))
-                if func not in ['sin', 'cos', 'rnd', 'line']:
+                if func not in ['sin', 'cos', 'sawtooth', 'square', 'rnd', 'line']:
                     raise Exception(f'Function "{func}" is not supported.')
                 source = {
                     'func': func,
@@ -47,6 +47,17 @@ class ConnectorTest(ConnectorABC):
                 return source['scale']
             elif source['func'] == 'rnd':
                 return rnd.uniform(0, source['scale'])
+            elif source['func'] == 'square':
+                source['phase'] += self.cycle / source['period']
+                if source['phase'] > source['period']:
+                    source['phase'] = 0.0
+                    source['scale'] *= -1
+                return source['scale']
+            elif source['func'] == 'sawtooth':
+                source['phase'] += self.cycle / source['period']
+                if source['phase'] > source['scale']:
+                    source['phase'] = 0.0
+                return source['phase']
             elif source['func'] == 'sin':
                 result = source['scale'] * math.sin(math.radians(source['phase']))
             elif source['func'] == 'cos':

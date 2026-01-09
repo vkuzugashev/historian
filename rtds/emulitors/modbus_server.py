@@ -16,7 +16,7 @@ class MyDataBank(DataBank):
 
     def get_coils(self, address, number=1, srv_info=None):
         """Get virtual coils registers."""
-        v_regs_d = {0: True, 1: True, 2: False, 3: False, 4: False}
+        v_regs_d = {0: True, 1: True, 2: False, 3: False, 4: False, 5: True, 6: False, 7: True}
         try:
             return [v_regs_d[a] for a in range(address, address+number)]
         except KeyError:
@@ -24,7 +24,7 @@ class MyDataBank(DataBank):
 
     def get_discrete_inputs(self, address, number=1, srv_info=None):
         """Get virtual discrete input registers."""
-        v_regs_d = {0: False, 1: False, 2: True, 3: True, 4: False}
+        v_regs_d = {0: False, 1: False, 2: True, 3: True, 4: False, 5: True, 6: False, 7: True}
         try:
             return [v_regs_d[a] for a in range(address, address+number)]
         except KeyError:

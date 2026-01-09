@@ -7,7 +7,7 @@ class TagType(Enum):
     BOOL=0
     INT=1
     FLOAT=2
-    STR=3
+    ARRAY=3
 
 def get_tag_type(type_:str):
     if type_.lower() == 'bool':
@@ -16,8 +16,8 @@ def get_tag_type(type_:str):
         return TagType.INT
     elif type_.lower() == 'float':
         return TagType.FLOAT
-    elif type_.lower() == 'str':
-        return TagType.STR
+    elif type_.lower() == 'array':
+        return TagType.ARRAY
     else:
         raise Exception('Unsupport tag type')
     
@@ -28,20 +28,22 @@ def get_type_name(type_:TagType):
         return 'int'
     elif type_ is TagType.FLOAT:
         return 'float'
-    elif type_ is TagType.STR:
-        return 'str'
+    elif type_ is TagType.ARRAY:
+        return 'array'
     else:
         raise Exception('Unsupport tag type')    
 
-def get_tag_value(type_, bool_value, int_value, float_value, str_value):
+def get_tag_value(type_, bool_value, int_value, float_value, array_value):
     if type_ == get_type_name(TagType.BOOL):
         return bool_value
     elif type_ == get_type_name(TagType.INT):
         return int_value
     elif type_ == get_type_name(TagType.FLOAT):
         return float_value
+    elif type_ == get_type_name(TagType.ARRAY):
+        return array_value
     else:
-        return str_value
+        raise Exception('Unsupport tag type')
 
 
 @dataclass
@@ -73,8 +75,10 @@ class Tag:
             self.value = int(value)
         elif type_ == TagType.FLOAT:
             self.value = float(value)
-        else:                
+        elif type_ == TagType.ARRAY:                
             self.value = value
+        else:
+            raise Exception('Unsupport tag type')
 
     def set(self, value, status):
         self.status = status
@@ -105,8 +109,8 @@ class Tag:
             return 'int'
         elif self.type_ is TagType.FLOAT:
             return 'float'
-        elif self.type_ is TagType.STR:
-            return 'str'
+        elif self.type_ is TagType.ARRAY:
+            return 'array'
         else:
             raise Exception('Unsupport tag type')
     
@@ -130,8 +134,10 @@ class TagValue:
                 self.value = int(tag.value)
             elif tag.type_ == TagType.FLOAT:
                 self.value = float(tag.value)
-            else:                
+            elif tag.type_ == TagType.ARRAY:
                 self.value = tag.value
+            else:                
+                raise Exception('Unsupport tag type')
         else:
             self.name = name
             self.type_ = type_

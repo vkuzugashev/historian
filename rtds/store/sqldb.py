@@ -295,7 +295,7 @@ def get_history(start_time, size):
                         bool_value = row.History.bool_value,
                         int_value = row.History.int_value,
                         float_value = row.History.float_value,
-                        str_value = row.History.str_value
+                        array_value = row.History.str_value
                     )
                 }
 
@@ -321,7 +321,7 @@ def get_current():
                     bool_value = row.Current.bool_value,
                     int_value = row.Current.int_value,
                     float_value = row.Current.float_value,
-                    str_value = row.Current.str_value
+                    array_value = row.Current.str_value
                 )
             }
 
@@ -472,31 +472,31 @@ def run(log_queue, store_queue, metricsq):
                     time.sleep(0.1)
                     continue
 
-                value = store_queue.get()
+                item = store_queue.get()
             
-                if not isinstance(value, TagValue):
-                    log.warning(f'Unsupport type: {value}')
+                if not isinstance(item, TagValue):
+                    log.warning(f'Unsupport type: {item}')
                     continue
 
                 history = History(
-                    tag_id=value.name,
-                    tag_time=value.update_time,
-                    status=value.status,
-                    bool_value = value.value if value.type_==TagType.BOOL else None,
-                    int_value = value.value if value.type_==TagType.INT else None,
-                    float_value = value.value if value.type_==TagType.FLOAT else None,
-                    str_value = ','.join(value.value) if value.type_==TagType.STR else None                
+                    tag_id=item.name,
+                    tag_time=item.update_time,
+                    status=item.status,
+                    bool_value = item.value if item.type_==TagType.BOOL else None,
+                    int_value = item.value if item.type_==TagType.INT else None,
+                    float_value = item.value if item.type_==TagType.FLOAT else None,
+                    str_value = ','.join([str(a) for a in item.value]) if item.type_==TagType.ARRAY else None                
                 )                    
                 batch.append(history)                    
                     
                 current = {
-                    "tag_id": value.name,
-                    "tag_time": value.update_time,
-                    "status": value.status,
-                    "bool_value": value.value if value.type_==TagType.BOOL else None,
-                    "int_value": value.value if value.type_==TagType.INT else None,
-                    "float_value": value.value if value.type_==TagType.FLOAT else None,
-                    "str_value": ','.join(value.value) if value.type_==TagType.STR else None
+                    "tag_id": item.name,
+                    "tag_time": item.update_time,
+                    "status": item.status,
+                    "bool_value": item.value if item.type_==TagType.BOOL else None,
+                    "int_value": item.value if item.type_==TagType.INT else None,
+                    "float_value": item.value if item.type_==TagType.FLOAT else None,
+                    "str_value": ','.join([str(a) for a in item.value]) if item.type_==TagType.ARRAY else None
                 }                
                 currents.append(current)
 
@@ -516,7 +516,7 @@ def run(log_queue, store_queue, metricsq):
                 log.info('store process stopped')
                 break
             except Exception as e:
-                log.error(f'fail store value: {value}, error: {e}')
+                log.error(f'fail store value: {item}, error: {e}')
         
 
 def batch_write(batch):

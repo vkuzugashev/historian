@@ -126,11 +126,13 @@ but got:
             result_list = self._read(tag.source)
             status = 0
             if result_list is None:
-                value = 0
+                value = None
                 status=-1
                 self.log.error(f'fail read modbus address: {tag.source}')
             elif len(result_list) == 1:
                 value = result_list[0]
+            elif len(result_list) > 1:
+                value = result_list
             else:
                 value = result_list
             self.log.debug(f'read modbus address: {tag.source} and get value: {value}')
@@ -161,13 +163,13 @@ if __name__ == '__main__':
     tag1 = Tag(name=f'tag_1', type_=TagType.INT, connector_name='modbus', source='RH:5:1')
     tags[tag1.name] = tag1
 
-    tag2 = Tag(name=f'tag_2', type_=TagType.STR, connector_name='modbus', source='RI:0:6')
+    tag2 = Tag(name=f'tag_2', type_=TagType.ARRAY, connector_name='modbus', source='RI:0:6')
     tags[tag2.name] = tag2
 
-    tag3 = Tag(name=f'tag_3', type_=TagType.STR, connector_name='modbus', source='C:0:4')
+    tag3 = Tag(name=f'tag_3', type_=TagType.ARRAY, connector_name='modbus', source='C:0:4')
     tags[tag3.name] = tag3
 
-    tag4 = Tag(name=f'tag_4', type_=TagType.STR, connector_name='modbus', source='DI:0:4')
+    tag4 = Tag(name=f'tag_4', type_=TagType.ARRAY, connector_name='modbus', source='DI:0:4')
     tags[tag4.name] = tag4
 
     for key, tag in tags.items():
