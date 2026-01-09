@@ -33,17 +33,23 @@ shared_metrics_queue = None
 
 def init():
     global engine, producer
-    log.info('Создаём engine и producer')
     # Создаём engine и producer
-    engine = create_engine(DB_URL, echo=STORE_SQL_ENGINE_ECHO)
-    producer = KafkaProducer(
-        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-        value_serializer=lambda v: json.dumps(v, default=str).encode('utf-8')    
-    )
+    if not engine:
+        log.info('create engine ...')
+        engine = create_engine(DB_URL, echo=STORE_SQL_ENGINE_ECHO)
+        log.info('engine created success')
+    if not producer:        
+        log.info('creating producer ...')
+        producer = KafkaProducer(
+            bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+            value_serializer=lambda v: json.dumps(v, default=str).encode('utf-8')
+        )
+        log.info('producer created success')
 
 def close_resources():
-    log.info('Closing resources...')
-    producer.close()
+    if producer:
+        log.info('Closing resources...')
+        producer.close()
 
 def send_history_batch():
     """
@@ -118,6 +124,9 @@ def send_history_batch():
                         value  = time.time() - start_time
                     )
                 )
+        
+        except KeyboardInterrupt:
+            raise
         except Exception as e:
             session.rollback()
             log.error(f"Error sending history batch: {e}", exc_info=True)
@@ -145,19 +154,19 @@ def run(log_queue=None, metrics_queue=None):    # Start up the server to expose 
 
     log = logger.get_logger('producer', log_queue)
     log.info(f'Kafka producer started: KAFKA_BOOTSTRAP_SERVERS={KAFKA_BOOTSTRAP_SERVERS}, KAFKA_TOPIC={KAFKA_TOPIC}')    
-
     
-    try:
-        init()
-        while True:        
+    while True:        
+        try:
+            init()
             send_history_batch()
             time.sleep(0.1)  # Задержка между отправками
-    except KeyboardInterrupt:
-        log.info('KeyboardInterrupt received. Exiting...')
-    except Exception as e:
-        log.error(f'Unhandled exception: {e}', exc_info=True)
-    finally:
-        close_resources()
+        except KeyboardInterrupt:
+            log.info('KeyboardInterrupt received. Exiting...')
+            break
+        except Exception as e:
+            log.error(f'Unhandled exception: {e}', exc_info=True)
+
+    close_resources()
 
 if __name__ == "__main__":
     log = logger.get_logger('kafka_producer')

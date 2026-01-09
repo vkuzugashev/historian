@@ -121,15 +121,22 @@ but got:
         
     def read(self):
         self.log.debug(f'read cycle process start')
+
         for key, tag in self.tags:
             result_list = self._read(tag.source)
-            if result_list is not None and len(result_list) == 1:
+            status = 0
+            if result_list is None:
+                value = 0
+                status=-1
+                self.log.error(f'fail read modbus address: {tag.source}')
+            elif len(result_list) == 1:
                 value = result_list[0]
             else:
                 value = result_list
             self.log.debug(f'read modbus address: {tag.source} and get value: {value}')
-            tgv = TagValue(name=key, type_=tag.type_, status=0, value=value)
+            tgv = TagValue(name=key, type_=tag.type_, status=status, value=value)
             self.read_queue.put(tgv)
+
         self.log.debug(f'read cycle processed')
 
     def write(self):

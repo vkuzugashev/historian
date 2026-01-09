@@ -111,6 +111,10 @@ class ConnectorABC(ABC):
                         )
                     )
             
+            except KeyboardInterrupt:
+                self.log.warning(f'KeyboardInterrupt received. Exiting {self.name}...')
+                break
+
             except Exception as e:
                 if self.metrics_queue:
                     self.metrics_queue.put(

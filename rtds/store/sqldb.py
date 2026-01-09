@@ -430,23 +430,25 @@ def delete_old_history():
                 else:
                     log.debug(f'no old history')
 
-                metrics_queue.put(
-                    metrics.Metric(
-                        name    = metrics.MetricEnum.STORE_DURATION,
-                        labels  = ['delete_old_history','ok'],
-                        value   = time.time() - start_time
+                if metrics_queue:
+                    metrics_queue.put(
+                        metrics.Metric(
+                            name    = metrics.MetricEnum.STORE_DURATION,
+                            labels  = ['delete_old_history','ok'],
+                            value   = time.time() - start_time
+                        )
                     )
-                )
             except Exception as e:
                 session.rollback()
                 log.error(f'Error deleting old history: {e}')
-                metrics_queue.put(
-                    metrics.Metric(
-                        name    = metrics.MetricEnum.STORE_DURATION,
-                        labels  = ['delete_old_history','error'],
-                        value   = time.time() - start_time
+                if metrics_queue:
+                    metrics_queue.put(
+                        metrics.Metric(
+                            name    = metrics.MetricEnum.STORE_DURATION,
+                            labels  = ['delete_old_history','error'],
+                            value   = time.time() - start_time
+                        )
                     )
-                )
 
 
 def run(log_queue, store_queue, metricsq):
@@ -464,16 +466,18 @@ def run(log_queue, store_queue, metricsq):
 
     while True:
             
-        # получить значение из очереди если есть
-        if store_queue.empty():
-            time.sleep(0.1)
-            continue
-
-        value = store_queue.get()
-            
-        if isinstance(value, TagValue):
-
             try:
+                # получить значение из очереди если есть
+                if store_queue.empty():
+                    time.sleep(0.1)
+                    continue
+
+                value = store_queue.get()
+            
+                if not isinstance(value, TagValue):
+                    log.warning(f'Unsupport type: {value}')
+                    continue
+
                 history = History(
                     tag_id=value.name,
                     tag_time=value.update_time,
@@ -493,8 +497,7 @@ def run(log_queue, store_queue, metricsq):
                     "int_value": value.value if value.type_==TagType.INT else None,
                     "float_value": value.value if value.type_==TagType.FLOAT else None,
                     "str_value": ','.join(value.value) if value.type_==TagType.STR else None
-                }
-                
+                }                
                 currents.append(current)
 
                 if len(batch) >= BATCH_SIZE or store_queue.empty():
@@ -508,15 +511,12 @@ def run(log_queue, store_queue, metricsq):
                 # удалить старые записи из history
                 if len(batch) >= BATCH_SIZE or len(currents) >= BATCH_SIZE or store_queue.empty():
                     delete_old_history()
-
+                    
+            except KeyboardInterrupt:
+                log.info('store process stopped')
+                break
             except Exception as e:
-                if e is KeyboardInterrupt:
-                    log.info('store process stopped')
-                    break
                 log.error(f'fail store value: {value}, error: {e}')
-
-        else:
-            log.warning(f'Unsupport type: {value}')
         
 
 def batch_write(batch):
@@ -527,22 +527,24 @@ def batch_write(batch):
             session.bulk_save_objects(batch)
             session.commit()
             log.debug(f'success stored batch: {len(batch)}')
-            metrics_queue.put(
-                metrics.Metric(
-                    name    = metrics.MetricEnum.STORE_DURATION,
-                    labels  = ['batch_write','ok'],
-                    value   = time.time() - start_time
+            if metrics_queue:
+                metrics_queue.put(
+                    metrics.Metric(
+                        name    = metrics.MetricEnum.STORE_DURATION,
+                        labels  = ['batch_write','ok'],
+                        value   = time.time() - start_time
+                    )
                 )
-            )
         except Exception as e:
             log.error(f'fail store batch: {len(batch)}, error: {e}')
-            metrics_queue.put(
-                metrics.Metric(
-                    name    = metrics.MetricEnum.STORE_DURATION,
-                    labels  = ['batch_write','error'],
-                    value   = time.time() - start_time
+            if metrics_queue:
+                metrics_queue.put(
+                    metrics.Metric(
+                        name    = metrics.MetricEnum.STORE_DURATION,
+                        labels  = ['batch_write','error'],
+                        value   = time.time() - start_time
+                    )
                 )
-            )
 
 def currents_write(items):
     engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
@@ -567,24 +569,26 @@ def currents_write(items):
             session.commit()
 
             log.debug(f'success stored current: {len(items)}')
-
-            metrics_queue.put(
-                metrics.Metric(
-                    name    = metrics.MetricEnum.STORE_DURATION,
-                    labels  = ['currents_write','ok'],
-                    value   = time.time() - start_time
+            
+            if metrics_queue:
+                metrics_queue.put(
+                    metrics.Metric(
+                        name    = metrics.MetricEnum.STORE_DURATION,
+                        labels  = ['currents_write','ok'],
+                        value   = time.time() - start_time
+                    )
                 )
-            )
 
         except Exception as e:
             log.error(f'fail store current: {len(items)}, error: {e}')
-            metrics_queue.put(
-                metrics.Metric(
-                    name    = metrics.MetricEnum.STORE_DURATION,
-                    labels  = ['currents_write','error'],
-                    value   = time.time() - start_time
+            if metrics_queue:
+                metrics_queue.put(
+                    metrics.Metric(
+                        name    = metrics.MetricEnum.STORE_DURATION,
+                        labels  = ['currents_write','error'],
+                        value   = time.time() - start_time
+                    )
                 )
-            )
 
 if __name__ == '__main__':    
     engine = create_engine(DB_URL, echo=True)

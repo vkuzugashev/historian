@@ -49,6 +49,8 @@ class ScriptABC(ABC):
                             value=time.time() - start_time
                         )
                     )
+            except KeyboardInterrupt:
+                self.log.warning(f'script {self.name} executed with KeyboardInterrupt')
             except Exception as e:
                 self.log.error(f'script {self.name} executed  with error', e)
                 if self.server and self.server.metrics_queue:

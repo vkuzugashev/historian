@@ -1,8 +1,7 @@
-import os
+import os, sys, time
 from pathlib import Path
-import sys
-import time 
 import multiprocessing as mp
+from dotenv import load_dotenv
 
 sys.path.extend(['.','..'])
 
@@ -15,18 +14,22 @@ from api import server as api
 from metrics import server as metrics
 from producers import kafka_producer as producer
 
-
+log = None 
 tags = {}
 connectors = {}
 scripts = {}
 processes = {}
 
-log_queue = mp.Queue()
-store_queue = mp.Queue()
-api_command_queue = mp.Queue()
-metrics_queue = mp.Queue()
+log_queue:mp.Queue = mp.Queue()
+store_queue:mp.Queue = mp.Queue()
+api_command_queue:mp.Queue = None
+metrics_queue:mp.Queue = None
 
-log = None 
+load_dotenv()
+
+API_ENEBLED = os.getenv('API_ENABLED', 'False').lower() == 'true'
+METRICS_ENABLED = os.getenv('METRICS_ENABLED', 'False').lower() == 'true'
+KAFKA_ENABLED = os.getenv('KAFKA_ENABLED', 'False').lower() == 'true'
 
 def add(tag):
     if isinstance(tag, Tag):
@@ -81,16 +84,18 @@ def api_run(log_queue, api_command_queue, metrics_queue):
         log.error(f'api process stoped, error: {e}')
 
 def api_command_handler():
-    log.debug('api command reading...')
+    if api_command_queue:
+        
+        log.debug('api command reading...')
     
-    if not api_command_queue.empty():
-        command = api_command_queue.get()
-        if isinstance(command, Command) and command.command_enum == CommandEnum.RELOAD:
-            reload_config()
-        else:
-            log.warning(f'unknow command: {command.command_enum}')
+        if not api_command_queue.empty():
+            command = api_command_queue.get()
+            if isinstance(command, Command) and command.command_enum == CommandEnum.RELOAD:
+                reload_config()
+            else:
+                log.warning(f'unknow command: {command.command_enum}')
 
-    log.debug('api command reding stoped')
+        log.debug('api command reding stoped')
 
 def metrics_run(log_queue, metrics_queue):
     log.info('metrics process started')
@@ -174,14 +179,17 @@ def reload_config():
     log.info('success reloaded configuration')
 
 def scan_cycle():
-    start_time = time.time()
+    if METRICS_ENABLED:
+        start_time = time.time()
+    
     for _, connector in sorted(connectors.items()):
         connector_read(connector)
     for _, script in sorted(scripts.items()):
         script.run()
     
-    duration = time.time() - start_time
-    metrics_queue.put(metrics.Metric(metrics.MetricEnum.SCAN_CYCLE_LATENCY, duration))
+    if METRICS_ENABLED:
+        duration = time.time() - start_time
+        metrics_queue.put(metrics.Metric(metrics.MetricEnum.SCAN_CYCLE_LATENCY, duration))
     
     
 def run():
@@ -192,9 +200,13 @@ def run():
     connectors, tags, _ = load_config()
 
     start_process(process_name='storage', target=storage_run, args=(log_queue, store_queue, metrics_queue, ))
-    start_process(process_name='api', target=api_run, args=(log_queue, api_command_queue, metrics_queue, ))  
-    start_process(process_name='metrics', target=metrics_run, args=(log_queue, metrics_queue,))  
-    start_process(process_name='producer', target=producer_run, args=(log_queue, metrics_queue,))  
+    
+    if API_ENEBLED:
+        start_process(process_name='api', target=api_run, args=(log_queue, api_command_queue, metrics_queue, ))  
+    if METRICS_ENABLED:
+        start_process(process_name='metrics', target=metrics_run, args=(log_queue, metrics_queue,))  
+    if KAFKA_ENABLED:
+        start_process(process_name='producer', target=producer_run, args=(log_queue, metrics_queue,))  
 
     start_connectors()
 
@@ -202,8 +214,9 @@ def run():
     log.info('server loop started')
 
     # Добавить cчетчики
-    metrics_queue.put(metrics.Metric(metrics.MetricEnum.TAG_COUNTER, len(tags)))
-    metrics_queue.put(metrics.Metric(metrics.MetricEnum.CONNECTOR_COUNTER, len(connectors)))
+    if METRICS_ENABLED:
+        metrics_queue.put(metrics.Metric(metrics.MetricEnum.TAG_COUNTER, len(tags)))
+        metrics_queue.put(metrics.Metric(metrics.MetricEnum.CONNECTOR_COUNTER, len(connectors)))
 
     try:
         while True:
@@ -219,6 +232,9 @@ def run():
 if __name__ == '__main__':
 
     log = logger.get_logger('server', log_queue)
+    
+    if METRICS_ENABLED:
+        metrics_queue = mp.Queue()
 
     # Создаем QueueListener для обработки очереди
     logger.start()

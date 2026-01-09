@@ -85,30 +85,37 @@ KAFKA_PRODUCER_DURATION = Histogram(
 def handle_metrics():
     if shared_metrics_queue:
         while True:
-            if not shared_metrics_queue.empty():                
+            try:                    
+                if shared_metrics_queue.empty():
+                    time.sleep(0.1)
+                    continue
+
                 metric = shared_metrics_queue.get()
-                if isinstance(metric, Metric):
-                    log.debug(f'handle_metrics: {metric}')
-                    try:                    
-                        match metric.name:
-                            case MetricEnum.SCAN_CYCLE_LATENCY:
-                                SCAN_CYCLE_LATENCY.observe(metric.value)
-                            case MetricEnum.TAG_COUNTER:
-                                TAG_COUNTER.inc(metric.value)
-                            case MetricEnum.CONNECTOR_COUNTER:
-                                CONNECTOR_COUNTER.inc(metric.value)
-                            case MetricEnum.CONNECTOR_DURATION:
-                                CONNECTOR_DURATION.labels(*metric.labels).observe(metric.value)
-                            case MetricEnum.STORE_DURATION:
-                                STORE_DURATION.labels(*metric.labels).observe(metric.value)
-                            case MetricEnum.SCRIPT_DURATION:
-                                SCRIPT_DURATION.labels(*metric.labels).observe(metric.value)
-                            case MetricEnum.KAFKA_PRODUCER_DURATION:
-                                KAFKA_PRODUCER_DURATION.labels(*metric.labels).observe(metric.value)
-                    except Exception as e:
-                        log.error(f'fail set metric: {metric.name}, {e}')
-            else:
-                time.sleep(0.1)
+                if not isinstance(metric, Metric):
+                    log.warning(f'Unsupport type: {metric}')
+                    continue
+
+                log.debug(f'handle_metrics: {metric}')
+                match metric.name:
+                    case MetricEnum.SCAN_CYCLE_LATENCY:
+                        SCAN_CYCLE_LATENCY.observe(metric.value)
+                    case MetricEnum.TAG_COUNTER:
+                        TAG_COUNTER.inc(metric.value)
+                    case MetricEnum.CONNECTOR_COUNTER:
+                        CONNECTOR_COUNTER.inc(metric.value)
+                    case MetricEnum.CONNECTOR_DURATION:
+                        CONNECTOR_DURATION.labels(*metric.labels).observe(metric.value)
+                    case MetricEnum.STORE_DURATION:
+                        STORE_DURATION.labels(*metric.labels).observe(metric.value)
+                    case MetricEnum.SCRIPT_DURATION:
+                        SCRIPT_DURATION.labels(*metric.labels).observe(metric.value)
+                    case MetricEnum.KAFKA_PRODUCER_DURATION:
+                        KAFKA_PRODUCER_DURATION.labels(*metric.labels).observe(metric.value)
+            except KeyboardInterrupt:
+                log.warning(f'KeyboardInterrupt received. Exiting ...')
+                break
+            except Exception as e:
+                log.error(f'fail set metric: {metric.name}, {e}')
 
 
 
