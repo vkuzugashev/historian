@@ -5,8 +5,9 @@ import time
 class HistoryMessage:
     tag_id:str=None
     tag_time:time=None
+    tag_type:str=None
     status:int=None
     bool_value:bool=None
     int_value:int=None
     float_value:float=None
-    str_value:str=None
+    array_value:str=None

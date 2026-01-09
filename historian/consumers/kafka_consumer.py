@@ -46,11 +46,12 @@ def deserialize_message(value: bytes) -> List[HistoryMessage]:
             msg = HistoryMessage(
                 tag_id=item.get('tg'),
                 tag_time=item.get('tm'),
+                tag_type=item.get('tp'),
                 status=item.get('st'),
                 bool_value=item.get('bv'),
                 int_value=item.get('iv'),
                 float_value=item.get('fv'),
-                str_value=item.get('sv')
+                array_value=item.get('av')
             )
             messages.append(msg)
         return messages

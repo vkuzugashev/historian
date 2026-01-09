@@ -26,11 +26,12 @@ class History(Base):
     __tablename__ = 'history'
     tag_time: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
     tag_id: Mapped[str] = mapped_column(String(10), primary_key=True)
+    tag_type: Mapped[str] = mapped_column(String(10))
     status: Mapped[int] = mapped_column(Integer)    
     bool_value: Mapped[Optional[bool]] = mapped_column(Boolean)    
     int_value: Mapped[Optional[int]] = mapped_column(Integer)    
     float_value: Mapped[Optional[float]] = mapped_column(Float)    
-    str_value: Mapped[Optional[str]] = mapped_column(String(500))    
+    array_value: Mapped[Optional[str]] = mapped_column(String(500))    
 
 def init_db():
     global log, engine
@@ -49,12 +50,13 @@ def store(items: Iterable[HistoryMessage]):
     for item in items:
         history = History(
             tag_id=item.tag_id,
+            tag_type=item.tag_type,
             tag_time=item.tag_time,
             status=item.status,
             bool_value = item.bool_value,
             int_value = item.int_value ,
             float_value = item.float_value,
-            str_value = item.str_value 
+            array_value = item.array_value 
         )                    
         batch.append(history)                    
                     

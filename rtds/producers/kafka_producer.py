@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 sys.path.extend(['.','..'])
 
 from loggers import logger
-from store.sqldb import History, State
+from store.sqldb import History, State, Tag
 from metrics import server as metrics
 
 load_dotenv()
@@ -73,12 +73,13 @@ def send_history_batch():
 
             # Выбираем следующие записи (упорядочено по tag_time, tag_id)
             stmt = (
-                select(History)
+                select(History, Tag)
+                .join(Tag, History.tag_id == Tag.id)
                 .where(History.id > last_id)
                 .order_by(History.id)
                 .limit(BATCH_SIZE)
             )
-            rows = session.scalars(stmt).all()
+            rows = session.execute(stmt).all()
 
             if not rows:
                 log.debug("No new history records to send.")
@@ -90,16 +91,17 @@ def send_history_batch():
 
             for row in rows:
                 msg = {
-                    "tg": row.tag_id,
-                    "tm": f'{row.tag_time.isoformat()}Z',
-                    "st": row.status,
-                    "bv": row.bool_value,
-                    "iv": row.int_value,
-                    "fv": row.float_value,
-                    "sv": row.str_value
+                    "tg": row.History.tag_id,
+                    "tm": f'{row.History.tag_time.isoformat()}Z',
+                    "tp": row.Tag.type_,
+                    "st": row.History.status,
+                    "bv": row.History.bool_value,
+                    "iv": row.History.int_value,
+                    "fv": row.History.float_value,
+                    "av": row.History.array_value
                 }
                 messages.append(msg)
-                max_id = row.id  # Обновляем до последней временной метки
+                max_id = row.History.id  # Обновляем до последней временной метки
 
             # Отправка в Kafka
             log.debug(f'Sending message: count={len(messages)}')
