@@ -22,16 +22,34 @@ engine = None
 class Base(DeclarativeBase):
     pass
 
-class History(Base):
-    __tablename__ = 'history'
+class HistoryBool(Base):
+    __tablename__ = 'history_bools'
     tag_time: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
-    tag_id: Mapped[str] = mapped_column(String(10), primary_key=True)
+    tag_id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    status: Mapped[int] = mapped_column(Integer)    
+    value: Mapped[Optional[bool]] = mapped_column(Boolean)    
+
+class HistoryInteger(Base):
+    __tablename__ = 'history_integers'
+    tag_time: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
+    tag_id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    status: Mapped[int] = mapped_column(Integer)    
+    value: Mapped[Optional[int]] = mapped_column(Integer)    
+
+class HistoryFloat(Base):
+    __tablename__ = 'history_floats'
+    tag_time: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
+    tag_id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    status: Mapped[int] = mapped_column(Integer)    
+    value: Mapped[Optional[float]] = mapped_column(Float)    
+
+class HistoryString(Base):
+    __tablename__ = 'history_strings'
+    tag_time: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
+    tag_id: Mapped[str] = mapped_column(String(50), primary_key=True)
     tag_type: Mapped[str] = mapped_column(String(10))
     status: Mapped[int] = mapped_column(Integer)    
-    bool_value: Mapped[Optional[bool]] = mapped_column(Boolean)    
-    int_value: Mapped[Optional[int]] = mapped_column(Integer)    
-    float_value: Mapped[Optional[float]] = mapped_column(Float)    
-    array_value: Mapped[Optional[str]] = mapped_column(String(500))    
+    value: Mapped[Optional[str]] = mapped_column(String(500))    
 
 def init_db():
     global log, engine
@@ -48,16 +66,38 @@ def store(items: Iterable[HistoryMessage]):
             
     # получить значение из очереди если есть
     for item in items:
-        history = History(
-            tag_id=item.tag_id,
-            tag_type=item.tag_type,
-            tag_time=item.tag_time,
-            status=item.status,
-            bool_value = item.bool_value,
-            int_value = item.int_value ,
-            float_value = item.float_value,
-            array_value = item.array_value 
-        )                    
+        if item.tag_type == 'bool':
+            history = HistoryBool(
+                tag_id=item.tag_id,
+                tag_time=item.tag_time,
+                status=item.status,
+                value = item.bool_value
+            )
+        elif item.tag_type == 'int':
+            history = HistoryInteger(
+                tag_id=item.tag_id,
+                tag_time=item.tag_time,
+                status=item.status,
+                value = item.int_value
+            )
+        elif item.tag_type == 'float':
+            history = HistoryFloat(
+                tag_id=item.tag_id,
+                tag_time=item.tag_time,
+                status=item.status,
+                value = item.float_value
+            )
+        elif item.tag_type in ['str','datetime','array']:
+            history = HistoryString(
+                tag_id=item.tag_id,
+                tag_time=item.tag_time,
+                tag_type=item.tag_type,
+                status=item.status,
+                value = item.var_value
+            )
+        else:
+            continue
+        
         batch.append(history)                    
                     
     try:

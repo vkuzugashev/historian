@@ -51,7 +51,7 @@ def deserialize_message(value: bytes) -> List[HistoryMessage]:
                 bool_value=item.get('bv'),
                 int_value=item.get('iv'),
                 float_value=item.get('fv'),
-                array_value=item.get('av')
+                var_value=item.get('vv')
             )
             messages.append(msg)
         return messages

@@ -70,7 +70,7 @@ class History(Base):
     bool_value: Mapped[Optional[bool]] = mapped_column(Boolean)    
     int_value: Mapped[Optional[int]] = mapped_column(Integer)    
     float_value: Mapped[Optional[float]] = mapped_column(Float)    
-    array_value: Mapped[Optional[str]] = mapped_column(String(500))    
+    var_value: Mapped[Optional[str]] = mapped_column(String(500))    
 
 class Current(Base):
     __tablename__ = 'current'
@@ -80,7 +80,7 @@ class Current(Base):
     bool_value: Mapped[Optional[bool]] = mapped_column(Boolean)    
     int_value: Mapped[Optional[int]] = mapped_column(Integer)    
     float_value: Mapped[Optional[float]] = mapped_column(Float)    
-    array_value: Mapped[Optional[str]] = mapped_column(String(500))    
+    var_value: Mapped[Optional[str]] = mapped_column(String(500))    
 
 class State(Base):
     __tablename__ = 'state'
@@ -295,7 +295,7 @@ def get_history(start_time, size):
                         bool_value = row.History.bool_value,
                         int_value = row.History.int_value,
                         float_value = row.History.float_value,
-                        array_value = row.History.array_value
+                        var_value = row.History.var_value
                     )
                 }
 
@@ -321,7 +321,7 @@ def get_current():
                     bool_value = row.Current.bool_value,
                     int_value = row.Current.int_value,
                     float_value = row.Current.float_value,
-                    array_value = row.Current.array_value
+                    var_value = row.Current.var_value
                 )
             }
 
@@ -485,7 +485,7 @@ def run(log_queue, store_queue, metricsq):
                     bool_value = item.value if item.type_==TagType.BOOL else None,
                     int_value = item.value if item.type_==TagType.INT else None,
                     float_value = item.value if item.type_==TagType.FLOAT else None,
-                    array_value = ','.join([str(a) for a in item.value]) if item.type_==TagType.ARRAY else None                
+                    var_value = ','.join([str(a) for a in item.value]) if item.type_ in [TagType.DATETIME, TagType.STR, TagType.ARRAY] else None                
                 )                    
                 batch.append(history)                    
                     
@@ -496,7 +496,7 @@ def run(log_queue, store_queue, metricsq):
                     "bool_value": item.value if item.type_==TagType.BOOL else None,
                     "int_value": item.value if item.type_==TagType.INT else None,
                     "float_value": item.value if item.type_==TagType.FLOAT else None,
-                    "array_value": ','.join([str(a) for a in item.value]) if item.type_==TagType.ARRAY else None
+                    "var_value": ','.join([str(a) for a in item.value]) if item.type_ in [TagType.DATETIME, TagType.STR, TagType.ARRAY] else None
                 }                
                 currents.append(current)
 
@@ -561,7 +561,7 @@ def currents_write(items):
                         "bool_value": stmt.excluded.bool_value,
                         "int_value": stmt.excluded.int_value,
                         "float_value": stmt.excluded.float_value,
-                        "array_value": stmt.excluded.array_value
+                        "var_value": stmt.excluded.var_value
                     }
                 )
             

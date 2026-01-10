@@ -10,4 +10,4 @@ class HistoryMessage:
     bool_value:bool=None
     int_value:int=None
     float_value:float=None
-    array_value:str=None
+    var_value:str=None
