@@ -9,6 +9,7 @@ sys.path.extend(['.', '..'])
 
 from models.history_message import HistoryMessage
 from loggers import logger
+import metrics
 
 load_dotenv()
 
@@ -115,22 +116,10 @@ def batch_write(batch):
             session.bulk_save_objects(batch)
             session.commit()
             log.debug(f'success stored batch: {len(batch)}')
-            # metrics_queue.put(
-            #     metrics.Metric(
-            #         name    = metrics.MetricEnum.STORE_DURATION,
-            #         labels  = ['batch_write','ok'],
-            #         value   = time.time() - start_time
-            #     )
-            # )
+            metrics.STORE_DURATION.labels('batch_write','ok').observe(time.time() - start_time)
         except Exception as e:
             log.error(f'fail store batch: {len(batch)}, error: {e}')
-            # metrics_queue.put(
-            #     metrics.Metric(
-            #         name    = metrics.MetricEnum.STORE_DURATION,
-            #         labels  = ['batch_write','error'],
-            #         value   = time.time() - start_time
-            #     )
-            # )
+            metrics.STORE_DURATION.labels('batch_write','error').observe(time.time() - start_time)
 
 if __name__ == '__main__':    
     engine = create_engine(DB_URL, echo=True)

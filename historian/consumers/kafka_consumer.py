@@ -5,6 +5,7 @@ import json
 from typing import List
 import logging
 from kafka import KafkaConsumer
+import metrics
 
 sys.path.extend(['.','..'])
 
@@ -34,6 +35,7 @@ def deserialize_message(value: bytes) -> List[HistoryMessage]:
     ]
     """    
     try:
+        start_time = time.time()
         data = json.loads(value.decode('utf-8'))
         if isinstance(data, str):            
             data = json.loads(data.strip('"'))
@@ -54,9 +56,11 @@ def deserialize_message(value: bytes) -> List[HistoryMessage]:
                 var_value=item.get('vv')
             )
             messages.append(msg)
+        metrics.CONSUMER_DURATION.labels("deserialize_message","ok").observe(time.time() - start_time)
         return messages
     except Exception as e:
         log.error(f"Failed to deserialize message: {e}", exc_info=True)
+        metrics.CONSUMER_DURATION.labels("deserialize_message","error").observe(time.time() - start_time)
         return []
 
 
@@ -104,7 +108,6 @@ def start_consumer():
                 log.debug(f"Stored {len(items)} history messages")
             except Exception as e:
                 log.error(f"Failed to store batch: {e}")
-                # Kafka не зафиксирует offset → сообщение будет перечитано
                 continue
 
     except KeyboardInterrupt:
