@@ -58,6 +58,7 @@ def init_db():
     if DB_URL is None:  
         raise Exception('DB_URL is not defined')
     engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+#    Base.metadata.create_all(engine)
     log.info('database initialized')
 
 def store(items: Iterable[HistoryMessage]):
@@ -121,5 +122,8 @@ def batch_write(batch):
             log.error(f'fail store batch: {len(batch)}, error: {e}')
             metrics.STORE_DURATION.labels('batch_write','error').observe(time.time() - start_time)
 
-if __name__ == '__main__':    
+if __name__ == '__main__':
+    print('DB_URL=',DB_URL)
     engine = create_engine(DB_URL, echo=True)
+#    Base.metadata.create_all(engine)
+

@@ -1,0 +1,5 @@
+-- Подключение к базе данных, которую хотим расширить
+\c historydb 
+
+-- Активируем расширение TimescaleDB
+CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;

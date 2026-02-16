@@ -14,4 +14,4 @@ WORKDIR /app
 COPY . .
 
 # Указываем команду запуска
-CMD ["python", "./app/server.py"]
+CMD ["python", "/app/server.py"]
