@@ -286,7 +286,7 @@ def run(log_queue=None, api_queue=None, metrics_queue=None):
    app.logger.handlers.clear()  # убираем дефолтные хэндлеры
    app.logger = custom_logger
    app.logger.propagate = False  # важно: не дублировать в root-логгер
-   app.run(port=API_PORT)
+   app.run(host='0.0.0.0', port=API_PORT)
 
 if __name__ == '__main__':
   run()

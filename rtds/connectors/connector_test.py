@@ -72,7 +72,7 @@ class ConnectorTest(ConnectorABC):
                 if source['phase'] >= 360:
                     source['phase'] %= 360
                 
-                self.log.debug(f'{tag_name}.phase={self.sources[tag_name]['phase']}, {source['phase']}')
+                self.log.debug(f"{tag_name}.phase={source['phase']}")
 
             return result
         else:

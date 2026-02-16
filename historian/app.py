@@ -5,19 +5,20 @@ import json
 from typing import List
 import logging
 from kafka import KafkaConsumer
-import metrics
+import time
 
 sys.path.extend(['.','..'])
 
 # Подключение к вашим модулям
-from historian.store import sqldb as store
-from historian.models.history_message import HistoryMessage
+from store import sqldb as store
+from models.history_message import HistoryMessage
+from metrics import server as metrics
 from dotenv import load_dotenv
 
 load_dotenv()
 
 # === Настройки из .env ===
-KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092').split(',')
+KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092').split(',')
 KAFKA_TOPIC = os.getenv('KAFKA_TOPIC', 'history_data')
 KAFKA_GROUP_ID = os.getenv('KAFKA_GROUP_ID', 'history_consumer')
 KAFKA_AUTO_COMMIT_INTERVAL_MS = int(os.getenv('KAFKA_AUTO_COMMIT_INTERVAL_MS', '5000'))
