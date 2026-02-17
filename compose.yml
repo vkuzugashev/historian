@@ -43,13 +43,8 @@ services:
     build: 
       context: ./historian
       dockerfile: Dockerfile
-    container_name: kmes-historian
     env_file:
       - ./historian/.env
-#    environment:
-#      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-    ports:
-      - "5003:5003"
     depends_on:
       postgres:
         condition: service_healthy

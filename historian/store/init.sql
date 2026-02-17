@@ -39,8 +39,14 @@ CREATE TABLE history_strings (
         PRIMARY KEY (tag_time, tag_id)
 );
 
+-- Приводим нашу таблицу к гипертаблице
 SELECT create_hypertable('history_bools', 'tag_time');
 SELECT create_hypertable('history_floats', 'tag_time');
 SELECT create_hypertable('history_integers', 'tag_time');
 SELECT create_hypertable('history_strings', 'tag_time');
 
+-- Устанавливаем политику хранения данных
+SELECT add_retention_policy('history_bools', INTERVAL '30 days');
+SELECT add_retention_policy('history_floats', INTERVAL '30 days');
+SELECT add_retention_policy('history_integers', INTERVAL '30 days');
+SELECT add_retention_policy('history_strings', INTERVAL '30 days');
