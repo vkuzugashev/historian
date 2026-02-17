@@ -58,7 +58,7 @@ CONNECTOR_DURATION = Histogram(
 )
 # метрики скриптов
 SCRIPT_DURATION = Histogram(
-    name='scrypt_duration',
+    name='script_duration',
     documentation='script execute duration',
     labelnames=['script', 'status'],
     unit='sec',

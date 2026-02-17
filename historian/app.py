@@ -5,7 +5,6 @@ import json
 from typing import List
 import logging
 from kafka import KafkaConsumer
-import metrics
 import time
 
 sys.path.extend(['.','..'])
@@ -13,6 +12,7 @@ sys.path.extend(['.','..'])
 # Подключение к вашим модулям
 from store import sqldb as store
 from models.history_message import HistoryMessage
+from metrics import server as metrics
 from dotenv import load_dotenv
 
 load_dotenv()
