@@ -14,7 +14,6 @@ from api import server as api
 from metrics import server as metrics
 from producers import kafka_producer as producer
 
-log = None 
 tags = {}
 connectors = {}
 scripts = {}
@@ -30,6 +29,8 @@ load_dotenv()
 API_ENEBLED = os.getenv('API_ENABLED', 'False').lower() == 'true'
 METRICS_ENABLED = os.getenv('METRICS_ENABLED', 'False').lower() == 'true'
 KAFKA_ENABLED = os.getenv('KAFKA_ENABLED', 'False').lower() == 'true'
+
+log = logger.get_logger('server', log_queue)
 
 def add(tag):
     if isinstance(tag, Tag):
@@ -135,9 +136,7 @@ def load_config():
     log.info(f'Loaded config, connectors: {len(connectors)}, tags: {len(tags)}, scripts: {len(scripts)}')
     return connectors, tags, scripts
 
-
 def start_process(process_name, target, args):
-    global processes
     p = mp.Process(target=target, args=args)
     p.start()
     processes[process_name] = p
@@ -155,7 +154,6 @@ def check_processes():
             raise Exception(f'process {key} stoped')            
 
 def start_connectors():
-    global connectors
     for _, connector in connectors.items():
         p = mp.Process(target=connector_run, args=(connector,))
         p.start()
@@ -193,12 +191,10 @@ def scan_cycle():
     
     
 def run():
-    
-    store.init_db(log_queue)
-    
     global connectors, tags
+    
+    store.init_db(log_queue)   
     connectors, tags, _ = load_config()
-
     start_process(process_name='storage', target=storage_run, args=(log_queue, store_queue, metrics_queue, ))
     
     if API_ENEBLED:
@@ -230,9 +226,7 @@ def run():
     stop_processes()
 
 if __name__ == '__main__':
-
-    log = logger.get_logger('server', log_queue)
-    
+   
     if METRICS_ENABLED:
         metrics_queue = mp.Queue()
 

@@ -383,10 +383,10 @@ def get_state():
                 "vl": state.value,
             }
 
-def init_db(log_queue):
+def init_db(log_queue=None):
     global log
-    if log_queue:
-        log = logger.get_logger('store', log_queue)
+
+    log = logger.get_logger('store', log_queue)
 
     engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     Base.metadata.create_all(engine)
@@ -457,9 +457,8 @@ def run(log_queue, store_queue, metricsq):
     batch = []
     currents = []
     
-    if log_queue:
-        log = logger.get_logger('store', log_queue)
-        log.info('store process started')
+    log = logger.get_logger('store', log_queue)
+    log.info('store process started')
     
     if metricsq:
         metrics_queue = metricsq
