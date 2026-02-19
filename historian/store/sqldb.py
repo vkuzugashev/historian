@@ -2,14 +2,14 @@ from typing import Optional, Iterable
 from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from datetime import datetime
-import sys, os
+import sys, os, time
 from dotenv import load_dotenv
 
 sys.path.extend(['.', '..'])
 
 from models.history_message import HistoryMessage
 from loggers import logger
-import metrics
+from metrics import server as metrics
 
 load_dotenv()
 
@@ -112,7 +112,7 @@ def store(items: Iterable[HistoryMessage]):
 def batch_write(batch):
     engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     with Session(engine) as session:
-        # start_time = time.time()
+        start_time = time.time()
         try:
             session.bulk_save_objects(batch)
             session.commit()
