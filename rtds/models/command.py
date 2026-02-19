@@ -3,6 +3,7 @@ from enum import Enum
 class CommandEnum(Enum):
     STATUS=0
     RELOAD=1
+    CLEAR=3
 
 class Command():
     command_enum:CommandEnum

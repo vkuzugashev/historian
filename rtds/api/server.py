@@ -146,24 +146,39 @@ def set_config():
         error_message = err.args[0]
         return {'error': error_message}, 400
 
-@app.route('/api/reload', methods=['POST'])
+@app.route('/api/config/reload', methods=['POST'])
 def reload():
     """
-        RTDS reload
+        RTDS metadata reload
         ---
         tags:
-          - reload
+          - config
         responses:
           200:
-            description: RTDS reload success
+            description: RTDS config reload success
     """
-    global API_COMMAND_QUEUE
-    
-    if API_COMMAND_QUEUE is not None:
+    if API_COMMAND_QUEUE:
       API_COMMAND_QUEUE.put(Command(CommandEnum.RELOAD))
+      return {'status': 'OK'}
+    else:
+      return {'error': 'API_COMMAND_QUEUE not defined'}, 400
 
-    return {'status': 'OK'}
-
+@app.route('/api/config/clear', methods=['POST'])
+def clear():
+    """
+        RTDS clear all metadata and history
+        ---
+        tags:
+          - config
+        responses:
+          200:
+            description: RTDS clear success
+    """
+    if API_COMMAND_QUEUE:
+      API_COMMAND_QUEUE.put(Command(CommandEnum.CLEAR))
+      return {'status': 'OK'}
+    else:
+      return {'error': 'API_COMMAND_QUEUE not defined'}, 400
 
 @app.route('/api/history/<start_time>/<size>', methods=['GET'])
 def get_history(start_time, size):
@@ -278,8 +293,7 @@ def get_state():
 def run(log_queue=None, api_queue=None, metrics_queue=None):
    global API_COMMAND_QUEUE   
    
-   if api_queue:
-       API_COMMAND_QUEUE = api_queue
+   API_COMMAND_QUEUE = api_queue
    
    custom_logger = logger.get_logger('api', log_queue)
    # Замена логгера Flask

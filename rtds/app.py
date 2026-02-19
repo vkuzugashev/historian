@@ -26,9 +26,10 @@ metrics_queue:mp.Queue = None
 
 load_dotenv()
 
-API_ENEBLED = os.getenv('API_ENABLED', 'False').lower() == 'true'
+API_ENABLED = os.getenv('API_ENABLED', 'False').lower() == 'true'
 METRICS_ENABLED = os.getenv('METRICS_ENABLED', 'False').lower() == 'true'
 KAFKA_ENABLED = os.getenv('KAFKA_ENABLED', 'False').lower() == 'true'
+PROCESS_STOP_TIMEOUT = float(os.getenv('PROCESS_STOP_TIMEOUT', '0.1'))
 
 log = logger.get_logger('server', log_queue)
 
@@ -86,15 +87,19 @@ def api_run(log_queue, api_command_queue, metrics_queue):
 
 def api_command_handler():
     if api_command_queue:
-        
         log.debug('api command reading...')
     
         if not api_command_queue.empty():
             command = api_command_queue.get()
-            if isinstance(command, Command) and command.command_enum == CommandEnum.RELOAD:
-                reload_config()
+            if isinstance(command, Command):
+                if command.command_enum == CommandEnum.RELOAD:
+                    reload_config()
+                elif command.command_enum == CommandEnum.CLEAR:
+                    clear_config()
+                else:
+                    log.warning(f'unsupport command: {command.command_enum}') 
             else:
-                log.warning(f'unknow command: {command.command_enum}')
+                log.warning(f'unknow type command: {command}')
 
         log.debug('api command reding stoped')
 
@@ -144,9 +149,15 @@ def start_process(process_name, target, args):
 
 def stop_processes():
     for key, process in processes.items():
-        process.terminate()
-        process.join()
-        log.info(f'process {key}, stoped')   
+        try:
+            if not process.is_alive():
+                log.warning(f'process {key} is stoped')
+                continue
+            process.terminate()
+            process.join(PROCESS_STOP_TIMEOUT)
+            log.info(f'process {key}, stoped')   
+        except Exception as e:
+            log.error(f'process {key}, stoped with error: {e}')
 
 def check_processes():
     for key, process in processes.items():
@@ -154,27 +165,53 @@ def check_processes():
             raise Exception(f'process {key} stoped')            
 
 def start_connectors():
-    for _, connector in connectors.items():
-        p = mp.Process(target=connector_run, args=(connector,))
-        p.start()
-        processes[connector.name] = p
-        log.info(f'connector {connector.name} started')
+    for connector in connectors.values():
+        try:
+            log.info(f'start connector {connector.name} ...')
+            p = mp.Process(target=connector_run, args=(connector,))
+            p.start()
+            processes[connector.name] = p
+            log.info(f'connector {connector.name} started')
+        except Exception as e:
+            log.error(f'Fail start connector {connector.name}, error: {e}')
 
-def reload_config():
-    global connectors, tags, scripts
-    
+def stop_connectors():
+    for connector in connectors.values():
+        process = processes.get(connector.name)
+        if process:
+            try:
+                if not process.is_alive():
+                    log.warning(f'connector process {connector.name} is already stoped')
+                    continue
+                log.info(f'connector process {connector.name} stoping ...')
+                process.terminate()
+                process.join(PROCESS_STOP_TIMEOUT)
+                log.info(f'connector process {connector.name}, stoped')
+            except Exception as e:
+                log.error(f'connector process {connector.name}, stoped with error: {e}')
+            processes.pop(connector.name)
+        else:
+            log.warning(f'connector process {connector.name} not found')
+
+
+def reload_config():   
     log.info('configuration reloading started ...')
     
-    for _, connector in connectors.items():
-        p = processes[connector.name]
-        p.terminate()
-        p.join()
-        log.info(f'process {connector.name}, stoped')
-    
-    connectors, tags, scripts = load_config()
+    stop_connectors()
+    _, _, _ = load_config()
     start_connectors()
     
     log.info('success reloaded configuration')
+
+def clear_config():
+    log.info('configuration clearing started ...')
+    
+    stop_connectors()
+    store.clear_config()
+    _, _, _ = load_config()
+    start_connectors()
+    
+    log.info('success cleared configuration')
 
 def scan_cycle():
     if METRICS_ENABLED:
@@ -191,44 +228,50 @@ def scan_cycle():
     
     
 def run():
-    global connectors, tags
-    
-    store.init_db(log_queue)   
-    connectors, tags, _ = load_config()
-    start_process(process_name='storage', target=storage_run, args=(log_queue, store_queue, metrics_queue, ))
-    
-    if API_ENEBLED:
-        start_process(process_name='api', target=api_run, args=(log_queue, api_command_queue, metrics_queue, ))  
-    if METRICS_ENABLED:
-        start_process(process_name='metrics', target=metrics_run, args=(log_queue, metrics_queue,))  
-    if KAFKA_ENABLED:
-        start_process(process_name='producer', target=producer_run, args=(log_queue, metrics_queue,))  
+    try: 
+        store.init_db(log_queue)   
+        _, _, _ = load_config()
+        start_process(process_name='storage', target=storage_run, args=(log_queue, store_queue, metrics_queue, ))
+        
+        if API_ENABLED:
+            start_process(process_name='api', target=api_run, args=(log_queue, api_command_queue, metrics_queue, ))  
+        if METRICS_ENABLED:
+            start_process(process_name='metrics', target=metrics_run, args=(log_queue, metrics_queue,))  
+        if KAFKA_ENABLED:
+            start_process(process_name='producer', target=producer_run, args=(log_queue, metrics_queue,))  
 
-    start_connectors()
+        start_connectors()
+        log.info('wait 5 sec ...')
+        time.sleep(5)
+        log.info('server loop started')
 
-    time.sleep(5)
-    log.info('server loop started')
+        # Добавить cчетчики
+        if METRICS_ENABLED:
+            metrics_queue.put(metrics.Metric(metrics.MetricEnum.TAG_COUNTER, len(tags)))
+            metrics_queue.put(metrics.Metric(metrics.MetricEnum.CONNECTOR_COUNTER, len(connectors)))
 
-    # Добавить cчетчики
-    if METRICS_ENABLED:
-        metrics_queue.put(metrics.Metric(metrics.MetricEnum.TAG_COUNTER, len(tags)))
-        metrics_queue.put(metrics.Metric(metrics.MetricEnum.CONNECTOR_COUNTER, len(connectors)))
+        try:
+            while True:
+                check_processes()
+                scan_cycle()
+                api_command_handler()
+                time.sleep(0.1)
+        except BaseException as e:
+            log.error(f'server loop stoped, error: {e}')
 
-    try:
-        while True:
-            check_processes()
-            scan_cycle()
-            api_command_handler()
-            time.sleep(0.1)
     except BaseException as e:
-        log.error(f'server loop stoped, error: {e}')
-
-    stop_processes()
+        log.error(f'server stoped, error: {e}')
+    finally:
+        stop_connectors()
+        stop_processes()
 
 if __name__ == '__main__':
    
     if METRICS_ENABLED:
         metrics_queue = mp.Queue()
+
+    if API_ENABLED:
+        api_command_queue = mp.Queue()
 
     # Создаем QueueListener для обработки очереди
     logger.start()
@@ -240,7 +283,9 @@ if __name__ == '__main__':
         connectors, tags, scripts = config_ods.load_from_file(configFile=configFile)
         log.info(f'Connectors: {len(connectors)}, Tags: {len(tags)}, Scripts: {len(scripts)}')
         store.set_config(connectors, tags, scripts)
-   
-    run()
-    
-    logger.stop()
+    try:
+        run()
+    except BaseException as e:
+        log.error(f'server stoped, error: {e}')
+    finally:
+        logger.stop()

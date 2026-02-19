@@ -18,7 +18,7 @@ from metrics import server as metrics
 
 load_dotenv()
 
-log = None
+log = logger.get_logger('store')
 
 BATCH_SIZE = int(os.getenv('STORE_BATCH_SIZE', '100'))
 STORE_HISTORY_HOURS = int(os.getenv('STORE_HISTORY_HOURS', '24'))
@@ -450,14 +450,19 @@ def delete_old_history():
                         )
                     )
 
+def clear_config():
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    log.info('database initialized') 
 
 def run(log_queue, store_queue, metricsq):
-    global log, metrics_queue
+    global metrics_queue
 
     batch = []
     currents = []
-    
-    log = logger.get_logger('store', log_queue)
+
+    log = logger.get_logger('store', log_queue)   
     log.info('store process started')
     
     if metricsq:
