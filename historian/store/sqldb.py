@@ -63,6 +63,7 @@ def init_db():
 
 def store(items: Iterable[HistoryMessage]):
     batch = []    
+    
     if len(items) == 0:
         raise Exception('items is empty')
             
@@ -102,12 +103,7 @@ def store(items: Iterable[HistoryMessage]):
         
         batch.append(history)                    
                     
-    try:
-        batch_write(batch)
-    except Exception as e:
-        log.error(f'fail store items: {e}')
-        raise
-        
+    batch_write(batch)        
 
 def batch_write(batch):
     engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
