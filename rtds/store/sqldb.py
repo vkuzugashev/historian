@@ -1,7 +1,7 @@
 import multiprocessing as mp
 import time
 from typing import Optional
-from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime, Text, select, delete, and_
+from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime, Text, func, select, delete, and_
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from datetime import datetime, timedelta, timezone
@@ -24,6 +24,7 @@ BATCH_SIZE = int(os.getenv('STORE_BATCH_SIZE', '100'))
 STORE_HISTORY_HOURS = int(os.getenv('STORE_HISTORY_HOURS', '24'))
 SQL_ENGINE_ECHO = os.getenv('STORE_SQL_ENGINE_ECHO', 'false').lower() in ('true', '1', 'on','yes')
 DB_URL = os.getenv('STORE_DB_URL','sqlite:///data/history.db')
+STORE_METRICS_INTERVAL_IN_SEC = int(os.getenv('STORE_METRICS_INTERVAL_IN_SEC', '600'))
 
 metrics_queue = None
 
@@ -456,6 +457,37 @@ def clear_config():
     Base.metadata.create_all(engine)
     log.info('database initialized') 
 
+def store_metrics():
+    if metrics_queue:
+        engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+        with Session(engine) as session:
+            query = (
+                select(func.count())
+                .select_from(History)
+            )
+            rows_count = session.execute(query).scalar()
+            metrics_queue.put(
+                metrics.Metric(
+                    name    = metrics.MetricEnum.STORE_ROWS_GAUGE,
+                    value   = rows_count
+                )
+            )
+            
+        path = DB_URL[10:]
+        try: 
+            size_in_bytes = os.path.getsize(path)
+            size_in_mb = size_in_bytes / 1024 / 1024
+
+            metrics_queue.put(
+                metrics.Metric(
+                    name    = metrics.MetricEnum.STORE_SIZE_GAUGE,
+                    value   = size_in_mb
+                )
+            )
+        except Exception as e:
+            log.warning(f'Fail get store size {e}')
+
+
 def run(log_queue, store_queue, metricsq):
     global metrics_queue
 
@@ -467,13 +499,20 @@ def run(log_queue, store_queue, metricsq):
     
     if metricsq:
         metrics_queue = metricsq
-
+    
+    store_last_collect_metrics = time.time()
+    
     while True:
             
             try:
                 # получить значение из очереди если есть
                 if store_queue.empty():
-                    time.sleep(0.1)
+                    # получим метрики базы
+                    if store_last_collect_metrics < time.time() - STORE_METRICS_INTERVAL_IN_SEC:
+                        store_metrics()
+                        store_last_collect_metrics = time.time()
+                    else:
+                        time.sleep(0.1)
                     continue
 
                 item = store_queue.get()

@@ -1,7 +1,7 @@
 from enum import Enum
 import time
 from typing import Iterable
-from prometheus_client import start_http_server, Counter, Histogram
+from prometheus_client import start_http_server, Counter, Histogram, Gauge
 from loggers import logger
 
 log = None
@@ -13,8 +13,11 @@ class MetricEnum(Enum):
     CONNECTOR_COUNTER=2
     CONNECTOR_DURATION=3
     STORE_DURATION=4
-    SCRIPT_DURATION=5
-    KAFKA_PRODUCER_DURATION=6
+    STORE_SIZE_GAUGE=5
+    STORE_ROWS_GAUGE=6
+    SCRIPT_DURATION=7
+    KAFKA_PRODUCER_DURATION=8
+
 
 class Metric:
     def __init__(self, name: MetricEnum, value: float, labels: Iterable[str]=None):
@@ -81,6 +84,17 @@ KAFKA_PRODUCER_DURATION = Histogram(
     buckets=(0.005, 0.01, 0.05, 0.1, 0.5, 1)
 )
 
+# Метрики локального файла
+STORE_SIZE_GAUGE = Gauge(
+    name='store_size_gauge',
+    documentation='store size',
+    unit='mb'
+)
+STORE_ROWS_GAUGE = Gauge(
+    name='store_rows_gauge',
+    documentation='store row count',
+    unit='count'
+)
 
 def handle_metrics():
     if shared_metrics_queue:
@@ -107,6 +121,10 @@ def handle_metrics():
                         CONNECTOR_DURATION.labels(*metric.labels).observe(metric.value)
                     case MetricEnum.STORE_DURATION:
                         STORE_DURATION.labels(*metric.labels).observe(metric.value)
+                    case MetricEnum.STORE_SIZE_GAUGE:
+                        STORE_SIZE_GAUGE.set(metric.value)
+                    case MetricEnum.STORE_ROWS_GAUGE:
+                        STORE_ROWS_GAUGE.set(metric.value)
                     case MetricEnum.SCRIPT_DURATION:
                         SCRIPT_DURATION.labels(*metric.labels).observe(metric.value)
                     case MetricEnum.KAFKA_PRODUCER_DURATION:
