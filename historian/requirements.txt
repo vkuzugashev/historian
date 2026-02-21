@@ -1,0 +1,5 @@
+dotenv
+sqlalchemy
+prometheus-client
+kafka-python
+psycopg2

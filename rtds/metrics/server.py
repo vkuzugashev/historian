@@ -1,7 +1,9 @@
 from enum import Enum
+import os
 import time
 from typing import Iterable
-from prometheus_client import start_http_server, Counter, Histogram
+from prometheus_client import start_http_server, Counter, Histogram, Gauge
+import psutil
 from loggers import logger
 
 log = None
@@ -13,7 +15,13 @@ class MetricEnum(Enum):
     CONNECTOR_COUNTER=2
     CONNECTOR_DURATION=3
     STORE_DURATION=4
-    SCRIPT_DURATION=5
+    STORE_SIZE_GAUGE=5
+    STORE_ROWS_GAUGE=6
+    SCRIPT_DURATION=7
+    KAFKA_PRODUCER_DURATION=8
+    PROCESS_CPU_USAGE=9
+    PROCESS_MEMORY_USAGE=10    
+
 
 class Metric:
     def __init__(self, name: MetricEnum, value: float, labels: Iterable[str]=None):
@@ -57,7 +65,7 @@ CONNECTOR_DURATION = Histogram(
 )
 # метрики скриптов
 SCRIPT_DURATION = Histogram(
-    name='scrypt_duration',
+    name='script_duration',
     documentation='script execute duration',
     labelnames=['script', 'status'],
     unit='sec',
@@ -71,33 +79,113 @@ STORE_DURATION = Histogram(
     unit='sec',
     buckets=(0.005, 0.01, 0.05, 0.1, 0.5, 1)
 )
+# метрики kafka producer
+KAFKA_PRODUCER_DURATION = Histogram(
+    name='kafka_producer_duration',
+    documentation='kafka producer methods duration',
+    labelnames=['status'],
+    unit='sec',
+    buckets=(0.005, 0.01, 0.05, 0.1, 0.5, 1)
+)
+
+# Метрики локального файла
+STORE_SIZE_GAUGE = Gauge(
+    name='store_size_gauge',
+    documentation='store size',
+    unit='mb'
+)
+STORE_ROWS_GAUGE = Gauge(
+    name='store_rows_gauge',
+    documentation='store row count',
+    unit='count'
+)
+
+PROCESS_CPU_USAGE = Gauge(
+    name ='process_cpu_percent',
+    documentation='Загрузка CPU процессом, %',
+    labelnames=['process']
+)
+PROCESS_MEMORY_USAGE = Gauge(
+    name='process_memory_mb', 
+    documentation='Использование памяти процессом, МБ',
+    labelnames=['process']
+)
 
 def handle_metrics():
     if shared_metrics_queue:
+        last_time = time.time()
         while True:
-            if not shared_metrics_queue.empty():                
+            try:                    
+                if shared_metrics_queue.empty():
+                    if time.time() - last_time > 60:
+                        collect_process_metrics('metrics', shared_metrics_queue)
+                        last_time = time.time()
+                    time.sleep(0.1)
+                    continue
+
                 metric = shared_metrics_queue.get()
-                if isinstance(metric, Metric):
-                    log.debug(f'handle_metrics: {metric}')
-                    try:                    
-                        match metric.name:
-                            case MetricEnum.SCAN_CYCLE_LATENCY:
-                                SCAN_CYCLE_LATENCY.observe(metric.value)
-                            case MetricEnum.TAG_COUNTER:
-                                TAG_COUNTER.inc(metric.value)
-                            case MetricEnum.CONNECTOR_COUNTER:
-                                CONNECTOR_COUNTER.inc(metric.value)
-                            case MetricEnum.CONNECTOR_DURATION:
-                                CONNECTOR_DURATION.labels(*metric.labels).observe(metric.value)
-                            case MetricEnum.STORE_DURATION:
-                                STORE_DURATION.labels(*metric.labels).observe(metric.value)
-                            case MetricEnum.SCRIPT_DURATION:
-                                SCRIPT_DURATION.labels(*metric.labels).observe(metric.value)
-                    except Exception as e:
-                        log.error(f'fail set metric: {metric.name}, {e}')
-            else:
-                time.sleep(0.1)
+                if not isinstance(metric, Metric):
+                    log.warning(f'Unsupport type: {metric}')
+                    continue
 
+                log.debug(f'handle_metrics: {metric}')
+                match metric.name:
+                    case MetricEnum.SCAN_CYCLE_LATENCY:
+                        SCAN_CYCLE_LATENCY.observe(metric.value)
+                    case MetricEnum.TAG_COUNTER:
+                        TAG_COUNTER.inc(metric.value)
+                    case MetricEnum.CONNECTOR_COUNTER:
+                        CONNECTOR_COUNTER.inc(metric.value)
+                    case MetricEnum.CONNECTOR_DURATION:
+                        CONNECTOR_DURATION.labels(*metric.labels).observe(metric.value)
+                    case MetricEnum.STORE_DURATION:
+                        STORE_DURATION.labels(*metric.labels).observe(metric.value)
+                    case MetricEnum.STORE_SIZE_GAUGE:
+                        STORE_SIZE_GAUGE.set(metric.value)
+                    case MetricEnum.STORE_ROWS_GAUGE:
+                        STORE_ROWS_GAUGE.set(metric.value)
+                    case MetricEnum.SCRIPT_DURATION:
+                        SCRIPT_DURATION.labels(*metric.labels).observe(metric.value)
+                    case MetricEnum.KAFKA_PRODUCER_DURATION:
+                        KAFKA_PRODUCER_DURATION.labels(*metric.labels).observe(metric.value)
+                    case MetricEnum.PROCESS_CPU_USAGE:
+                        PROCESS_CPU_USAGE.labels(*metric.labels).set(metric.value)
+                    case MetricEnum.PROCESS_MEMORY_USAGE:
+                        PROCESS_MEMORY_USAGE.labels(*metric.labels).set(metric.value)
+                    case _:
+                        log.warning(f'Unsupported metric: {metric}')
+            except KeyboardInterrupt:
+                log.warning(f'KeyboardInterrupt received. Exiting ...')
+                break
+            except Exception as e:
+                log.error(f'fail set metric: {metric.name}, {e}')
 
+def collect_process_metrics(process_name, metrics_queue):
+    if metrics_queue:
+        try: 
+            process = psutil.Process(os.getpid())
+
+            # CPU usage (%)
+            cpu_percent = process.cpu_percent(interval=None)  # non-blocking
+            metrics_queue.put(
+                Metric(
+                    name = MetricEnum.PROCESS_CPU_USAGE,
+                    labels= [process_name],
+                    value = cpu_percent
+                )
+            )
+            
+            # Memory usage (MB)
+            memory_mb = process.memory_info().rss / 1024 / 1024  # RSS in MB
+            metrics_queue.put(
+                Metric(
+                    name = MetricEnum.PROCESS_MEMORY_USAGE,
+                    labels= [process_name],
+                    value = memory_mb
+                )
+            )
+
+        except Exception as e:
+            log.warning(f'fail get process metrics: {e}')
 
 

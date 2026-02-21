@@ -1,11 +1,11 @@
 import multiprocessing as mp
 import time
 from typing import Optional
-from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime, Text, select, delete
+from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime, Text, func, select, delete, and_
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from datetime import datetime, timedelta, timezone
-import sys, os
+import sys, os, psutil
 from dotenv import load_dotenv
 
 sys.path.extend(['.', '..'])
@@ -18,7 +18,7 @@ from metrics import server as metrics
 
 load_dotenv()
 
-log = None
+log = logger.get_logger('store')
 
 BATCH_SIZE = int(os.getenv('STORE_BATCH_SIZE', '100'))
 STORE_HISTORY_HOURS = int(os.getenv('STORE_HISTORY_HOURS', '24'))
@@ -63,13 +63,14 @@ class Tag(Base):
 
 class History(Base):
     __tablename__ = 'history'
-    tag_id: Mapped[str] = mapped_column(String(10), primary_key=True)
-    tag_time: Mapped[datetime] = mapped_column(DateTime, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tag_time: Mapped[datetime] = mapped_column(DateTime, index=True)
+    tag_id: Mapped[str] = mapped_column(String(10), index=True)
     status: Mapped[int] = mapped_column(Integer)    
     bool_value: Mapped[Optional[bool]] = mapped_column(Boolean)    
     int_value: Mapped[Optional[int]] = mapped_column(Integer)    
     float_value: Mapped[Optional[float]] = mapped_column(Float)    
-    str_value: Mapped[Optional[str]] = mapped_column(String(500))    
+    var_value: Mapped[Optional[str]] = mapped_column(String(500))    
 
 class Current(Base):
     __tablename__ = 'current'
@@ -79,7 +80,7 @@ class Current(Base):
     bool_value: Mapped[Optional[bool]] = mapped_column(Boolean)    
     int_value: Mapped[Optional[int]] = mapped_column(Integer)    
     float_value: Mapped[Optional[float]] = mapped_column(Float)    
-    str_value: Mapped[Optional[str]] = mapped_column(String(500))    
+    var_value: Mapped[Optional[str]] = mapped_column(String(500))    
 
 class State(Base):
     __tablename__ = 'state'
@@ -294,7 +295,7 @@ def get_history(start_time, size):
                         bool_value = row.History.bool_value,
                         int_value = row.History.int_value,
                         float_value = row.History.float_value,
-                        str_value = row.History.str_value
+                        var_value = row.History.var_value
                     )
                 }
 
@@ -320,7 +321,7 @@ def get_current():
                     bool_value = row.Current.bool_value,
                     int_value = row.Current.int_value,
                     float_value = row.Current.float_value,
-                    str_value = row.Current.str_value
+                    var_value = row.Current.var_value
                 )
             }
 
@@ -382,10 +383,10 @@ def get_state():
                 "vl": state.value,
             }
 
-def init_db(log_queue):
+def init_db(log_queue=None):
     global log
-    if log_queue:
-        log = logger.get_logger('store', log_queue)
+
+    log = logger.get_logger('store', log_queue)
 
     engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
     Base.metadata.create_all(engine)
@@ -395,14 +396,31 @@ def delete_old_history():
     if STORE_HISTORY_HOURS:
         engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
         with Session(engine) as session:
-            # удалить старые строки из history
-            delete_time = datetime.now(timezone.utc) - timedelta(hours=STORE_HISTORY_HOURS)
-            query = (
-                delete(History)
-                .where(History.tag_time < delete_time)
-            )
+        
             start_time = time.time()
             try:
+                state_query = (
+                    select(State)
+                    .filter(State.id == 'producer_last_id')
+                )
+                state = session.scalars(state_query).one_or_none()
+
+                # удалить старые строки из history
+                delete_time = datetime.now(timezone.utc) - timedelta(hours=STORE_HISTORY_HOURS)
+                if state and state.value:
+                    last_id = int(state.value)
+                    query = (
+                        delete(History)
+                        .where(
+                            and_(History.tag_time < delete_time, History.id < last_id)
+                        )
+                    )
+                else:
+                    query = (
+                        delete(History)
+                        .where(History.tag_time < delete_time)
+                    )
+            
                 result = session.execute(query)  
                 deleted_count = result.rowcount
                 session.commit()
@@ -412,71 +430,118 @@ def delete_old_history():
                 else:
                     log.debug(f'no old history')
 
-                metrics_queue.put(
-                    metrics.Metric(
-                        name    = metrics.MetricEnum.STORE_DURATION,
-                        labels  = ['delete_old_history','ok'],
-                        value   = time.time() - start_time
+                if metrics_queue:
+                    metrics_queue.put(
+                        metrics.Metric(
+                            name    = metrics.MetricEnum.STORE_DURATION,
+                            labels  = ['delete_old_history','ok'],
+                            value   = time.time() - start_time
+                        )
                     )
-                )
             except Exception as e:
                 session.rollback()
                 log.error(f'Error deleting old history: {e}')
-                metrics_queue.put(
-                    metrics.Metric(
-                        name    = metrics.MetricEnum.STORE_DURATION,
-                        labels  = ['delete_old_history','error'],
-                        value   = time.time() - start_time
+                if metrics_queue:
+                    metrics_queue.put(
+                        metrics.Metric(
+                            name    = metrics.MetricEnum.STORE_DURATION,
+                            labels  = ['delete_old_history','error'],
+                            value   = time.time() - start_time
+                        )
                     )
+
+def clear_config():
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    log.info('database initialized') 
+
+def collect_store_metrics():
+    metrics.collect_process_metrics('store', metrics_queue)
+
+    if metrics_queue:
+        engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+        with Session(engine) as session:
+            query = (
+                select(func.count())
+                .select_from(History)
+            )
+            rows_count = session.execute(query).scalar()
+            metrics_queue.put(
+                metrics.Metric(
+                    name    = metrics.MetricEnum.STORE_ROWS_GAUGE,
+                    value   = rows_count
                 )
+            )
+            
+        path = DB_URL[10:]
+        try: 
+            size_in_bytes = os.path.getsize(path)
+            size_in_mb = size_in_bytes / 1024 / 1024
 
-
+            metrics_queue.put(
+                metrics.Metric(
+                    name    = metrics.MetricEnum.STORE_SIZE_GAUGE,
+                    value   = size_in_mb
+                )
+            )
+        except Exception as e:
+            log.warning(f'Fail get store size {e}')
+        
 def run(log_queue, store_queue, metricsq):
-    global log, metrics_queue
+    global metrics_queue
 
     batch = []
     currents = []
-    
-    if log_queue:
-        log = logger.get_logger('store', log_queue)
-        log.info('store process started')
+
+    log = logger.get_logger('store', log_queue)   
+    log.info('store process started')
     
     if metricsq:
         metrics_queue = metricsq
-
+    
+    last_collect_metrics = time.time()
+    
     while True:
             
-        # получить значение из очереди если есть
-        if store_queue.empty():
-            time.sleep(0.1)
-            continue
-
-        value = store_queue.get()
-            
-        if isinstance(value, TagValue):
-
             try:
-                history = History(
-                    tag_id=value.name,
-                    tag_time=value.update_time,
-                    status=value.status,
-                    bool_value = value.value if value.type_==TagType.BOOL else None,
-                    int_value = value.value if value.type_==TagType.INT else None,
-                    float_value = value.value if value.type_==TagType.FLOAT else None,
-                    str_value = ','.join(value.value) if value.type_==TagType.STR else None                
-                )                    
-                batch.append(history)                    
+                # получить значение из очереди если есть
+                if store_queue.empty():
+                    # получим метрики базы
+                    if time.time() - last_collect_metrics > 60:
+                        collect_store_metrics()
+                        last_collect_metrics = time.time()
+                    else:
+                        time.sleep(0.1)
+                    continue
+
+                item = store_queue.get()
+            
+                if not isinstance(item, TagValue):
+                    log.warning(f'Unsupport type: {item}')
+                    continue
+                
+                if item.is_log:
+                    history = History(
+                        tag_id=item.name,
+                        tag_time=item.update_time,
+                        status=item.status,
+                        bool_value = item.value if item.type_==TagType.BOOL else None,
+                        int_value = item.value if item.type_==TagType.INT else None,
+                        float_value = item.value if item.type_==TagType.FLOAT else None,
+                        var_value = ','.join([str(a) for a in item.value]) if item.type_ in [TagType.DATETIME, TagType.STR, TagType.ARRAY] else None                
+                    )                    
+                    batch.append(history)                    
                     
                 current = {
-                    "tag_id": value.name,
-                    "tag_time": value.update_time,
-                    "status": value.status,
-                    "bool_value": value.value if value.type_==TagType.BOOL else None,
-                    "int_value": value.value if value.type_==TagType.INT else None,
-                    "float_value": value.value if value.type_==TagType.FLOAT else None,
-                    "str_value": ','.join(value.value) if value.type_==TagType.STR else None
-                }
-                
+                    "tag_id": item.name,
+                    "tag_time": item.update_time,
+                    "status": item.status,
+                    "bool_value": item.value if item.type_==TagType.BOOL else None,
+                    "int_value": item.value if item.type_==TagType.INT else None,
+                    "float_value": item.value if item.type_==TagType.FLOAT else None,
+                    "var_value": ','.join([str(a) for a in item.value]) if item.type_ in [TagType.DATETIME, TagType.STR, TagType.ARRAY] else None
+                }                
                 currents.append(current)
 
                 if len(batch) >= BATCH_SIZE or store_queue.empty():
@@ -490,15 +555,12 @@ def run(log_queue, store_queue, metricsq):
                 # удалить старые записи из history
                 if len(batch) >= BATCH_SIZE or len(currents) >= BATCH_SIZE or store_queue.empty():
                     delete_old_history()
-
+                    
+            except KeyboardInterrupt:
+                log.info('store process stopped')
+                break
             except Exception as e:
-                if e is KeyboardInterrupt:
-                    log.info('store process stopped')
-                    break
-                log.error(f'fail store value: {value}, error: {e}')
-
-        else:
-            log.warning(f'Unsupport type: {value}')
+                log.error(f'fail store value: {item}, error: {e}')
         
 
 def batch_write(batch):
@@ -509,22 +571,24 @@ def batch_write(batch):
             session.bulk_save_objects(batch)
             session.commit()
             log.debug(f'success stored batch: {len(batch)}')
-            metrics_queue.put(
-                metrics.Metric(
-                    name    = metrics.MetricEnum.STORE_DURATION,
-                    labels  = ['batch_write','ok'],
-                    value   = time.time() - start_time
+            if metrics_queue:
+                metrics_queue.put(
+                    metrics.Metric(
+                        name    = metrics.MetricEnum.STORE_DURATION,
+                        labels  = ['batch_write','ok'],
+                        value   = time.time() - start_time
+                    )
                 )
-            )
         except Exception as e:
             log.error(f'fail store batch: {len(batch)}, error: {e}')
-            metrics_queue.put(
-                metrics.Metric(
-                    name    = metrics.MetricEnum.STORE_DURATION,
-                    labels  = ['batch_write','error'],
-                    value   = time.time() - start_time
+            if metrics_queue:
+                metrics_queue.put(
+                    metrics.Metric(
+                        name    = metrics.MetricEnum.STORE_DURATION,
+                        labels  = ['batch_write','error'],
+                        value   = time.time() - start_time
+                    )
                 )
-            )
 
 def currents_write(items):
     engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
@@ -541,7 +605,7 @@ def currents_write(items):
                         "bool_value": stmt.excluded.bool_value,
                         "int_value": stmt.excluded.int_value,
                         "float_value": stmt.excluded.float_value,
-                        "str_value": stmt.excluded.str_value
+                        "var_value": stmt.excluded.var_value
                     }
                 )
             
@@ -549,24 +613,26 @@ def currents_write(items):
             session.commit()
 
             log.debug(f'success stored current: {len(items)}')
-
-            metrics_queue.put(
-                metrics.Metric(
-                    name    = metrics.MetricEnum.STORE_DURATION,
-                    labels  = ['currents_write','ok'],
-                    value   = time.time() - start_time
+            
+            if metrics_queue:
+                metrics_queue.put(
+                    metrics.Metric(
+                        name    = metrics.MetricEnum.STORE_DURATION,
+                        labels  = ['currents_write','ok'],
+                        value   = time.time() - start_time
+                    )
                 )
-            )
 
         except Exception as e:
             log.error(f'fail store current: {len(items)}, error: {e}')
-            metrics_queue.put(
-                metrics.Metric(
-                    name    = metrics.MetricEnum.STORE_DURATION,
-                    labels  = ['currents_write','error'],
-                    value   = time.time() - start_time
+            if metrics_queue:
+                metrics_queue.put(
+                    metrics.Metric(
+                        name    = metrics.MetricEnum.STORE_DURATION,
+                        labels  = ['currents_write','error'],
+                        value   = time.time() - start_time
+                    )
                 )
-            )
 
 if __name__ == '__main__':    
     engine = create_engine(DB_URL, echo=True)

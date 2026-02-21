@@ -1,2 +1,0 @@
-
-print("Loaded connectors module")
