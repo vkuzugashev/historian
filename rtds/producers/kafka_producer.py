@@ -158,10 +158,16 @@ def run(log_queue=None, metrics_queue=None):    # Start up the server to expose 
     log = logger.get_logger('producer', log_queue)
     log.info(f'Kafka producer started: KAFKA_BOOTSTRAP_SERVERS={KAFKA_BOOTSTRAP_SERVERS}, KAFKA_TOPIC={KAFKA_TOPIC}')    
     
+    last_collect_metrics = time.time()
     while True:        
         try:
             init()
             send_history_batch()
+            if metrics_queue:
+                if time.time() - last_collect_metrics > 60:
+                    last_collect_metrics = time.time()
+                    # Метрики kafka producer
+                    metrics.collect_process_metrics('producer', metrics_queue)
             time.sleep(0.1)  # Задержка между отправками
         except KeyboardInterrupt:
             log.info('KeyboardInterrupt received. Exiting...')

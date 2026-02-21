@@ -7,3 +7,4 @@ prometheus-client
 flask_swagger
 flask_swagger_ui
 kafka-python
+psutil

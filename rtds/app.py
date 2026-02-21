@@ -50,9 +50,8 @@ def _set(value):
     if isinstance(value, TagValue):
         tag = tags[value.name]
         if tag is not None:
-             new_value = tag.set(value.value, value.status)
-             if tag.is_log:
-                 store_queue.put(new_value)                            
+            new_value = tag.set(value.value, value.status)
+            store_queue.put(new_value)                            
     else:
         log.error(f'Unsupport type: {value}')
 
@@ -250,11 +249,14 @@ def run():
             metrics_queue.put(metrics.Metric(metrics.MetricEnum.TAG_COUNTER, len(tags)))
             metrics_queue.put(metrics.Metric(metrics.MetricEnum.CONNECTOR_COUNTER, len(connectors)))
 
+        last_collect_metrics = time.time()
         try:
             while True:
                 check_processes()
                 scan_cycle()
                 api_command_handler()
+                if time.time() - last_collect_metrics > 60:
+                    metrics.collect_process_metrics('app', metrics_queue)
                 time.sleep(0.1)
         except BaseException as e:
             log.error(f'server loop stoped, error: {e}')

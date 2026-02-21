@@ -17,6 +17,7 @@ class ConnectorABC(ABC):
     description:str = None
     metrics_queue:Queue = None
     start_cycle_time:float = None
+    last_collect_metrics:float = None
 
     def __init__(self, 
                  log, 
@@ -41,7 +42,7 @@ class ConnectorABC(ABC):
             self.write_queue = write_queue
         self.connection_string = dict(map(str.strip, sub.split('=', 1)) for sub in connection_string.split(';') if '=' in sub)
         self.metrics_queue = metrics_queue
-
+        self.last_collect_metrics = time.time()
         self.log.info(f'loaded {len(self.tags)} tags')
 
 
@@ -110,6 +111,10 @@ class ConnectorABC(ABC):
                             value  = time.time() - self.start_cycle_time
                         )
                     )
+
+                    if self.start_cycle_time - self.last_collect_metrics > 10:
+                        metrics.collect_process_metrics(self.name, self.metrics_queue)
+                        self.last_collect_metrics = self.start_cycle_time
             
             except KeyboardInterrupt:
                 self.log.warning(f'KeyboardInterrupt received. Exiting {self.name}...')

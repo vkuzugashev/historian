@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime,
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from datetime import datetime, timedelta, timezone
-import sys, os
+import sys, os, psutil
 from dotenv import load_dotenv
 
 sys.path.extend(['.', '..'])
@@ -24,7 +24,6 @@ BATCH_SIZE = int(os.getenv('STORE_BATCH_SIZE', '100'))
 STORE_HISTORY_HOURS = int(os.getenv('STORE_HISTORY_HOURS', '24'))
 SQL_ENGINE_ECHO = os.getenv('STORE_SQL_ENGINE_ECHO', 'false').lower() in ('true', '1', 'on','yes')
 DB_URL = os.getenv('STORE_DB_URL','sqlite:///data/history.db')
-STORE_METRICS_INTERVAL_IN_SEC = int(os.getenv('STORE_METRICS_INTERVAL_IN_SEC', '600'))
 
 metrics_queue = None
 
@@ -457,7 +456,9 @@ def clear_config():
     Base.metadata.create_all(engine)
     log.info('database initialized') 
 
-def store_metrics():
+def collect_store_metrics():
+    metrics.collect_process_metrics('store', metrics_queue)
+
     if metrics_queue:
         engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
         with Session(engine) as session:
@@ -486,8 +487,7 @@ def store_metrics():
             )
         except Exception as e:
             log.warning(f'Fail get store size {e}')
-
-
+        
 def run(log_queue, store_queue, metricsq):
     global metrics_queue
 
@@ -500,7 +500,7 @@ def run(log_queue, store_queue, metricsq):
     if metricsq:
         metrics_queue = metricsq
     
-    store_last_collect_metrics = time.time()
+    last_collect_metrics = time.time()
     
     while True:
             
@@ -508,9 +508,9 @@ def run(log_queue, store_queue, metricsq):
                 # получить значение из очереди если есть
                 if store_queue.empty():
                     # получим метрики базы
-                    if store_last_collect_metrics < time.time() - STORE_METRICS_INTERVAL_IN_SEC:
-                        store_metrics()
-                        store_last_collect_metrics = time.time()
+                    if time.time() - last_collect_metrics > 60:
+                        collect_store_metrics()
+                        last_collect_metrics = time.time()
                     else:
                         time.sleep(0.1)
                     continue
@@ -520,17 +520,18 @@ def run(log_queue, store_queue, metricsq):
                 if not isinstance(item, TagValue):
                     log.warning(f'Unsupport type: {item}')
                     continue
-
-                history = History(
-                    tag_id=item.name,
-                    tag_time=item.update_time,
-                    status=item.status,
-                    bool_value = item.value if item.type_==TagType.BOOL else None,
-                    int_value = item.value if item.type_==TagType.INT else None,
-                    float_value = item.value if item.type_==TagType.FLOAT else None,
-                    var_value = ','.join([str(a) for a in item.value]) if item.type_ in [TagType.DATETIME, TagType.STR, TagType.ARRAY] else None                
-                )                    
-                batch.append(history)                    
+                
+                if item.is_log:
+                    history = History(
+                        tag_id=item.name,
+                        tag_time=item.update_time,
+                        status=item.status,
+                        bool_value = item.value if item.type_==TagType.BOOL else None,
+                        int_value = item.value if item.type_==TagType.INT else None,
+                        float_value = item.value if item.type_==TagType.FLOAT else None,
+                        var_value = ','.join([str(a) for a in item.value]) if item.type_ in [TagType.DATETIME, TagType.STR, TagType.ARRAY] else None                
+                    )                    
+                    batch.append(history)                    
                     
                 current = {
                     "tag_id": item.name,

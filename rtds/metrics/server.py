@@ -1,7 +1,9 @@
 from enum import Enum
+import os
 import time
 from typing import Iterable
 from prometheus_client import start_http_server, Counter, Histogram, Gauge
+import psutil
 from loggers import logger
 
 log = None
@@ -17,6 +19,8 @@ class MetricEnum(Enum):
     STORE_ROWS_GAUGE=6
     SCRIPT_DURATION=7
     KAFKA_PRODUCER_DURATION=8
+    PROCESS_CPU_USAGE=9
+    PROCESS_MEMORY_USAGE=10    
 
 
 class Metric:
@@ -96,11 +100,26 @@ STORE_ROWS_GAUGE = Gauge(
     unit='count'
 )
 
+PROCESS_CPU_USAGE = Gauge(
+    name ='process_cpu_percent',
+    documentation='Загрузка CPU процессом, %',
+    labelnames=['process']
+)
+PROCESS_MEMORY_USAGE = Gauge(
+    name='process_memory_mb', 
+    documentation='Использование памяти процессом, МБ',
+    labelnames=['process']
+)
+
 def handle_metrics():
     if shared_metrics_queue:
+        last_time = time.time()
         while True:
             try:                    
                 if shared_metrics_queue.empty():
+                    if time.time() - last_time > 60:
+                        collect_process_metrics('metrics', shared_metrics_queue)
+                        last_time = time.time()
                     time.sleep(0.1)
                     continue
 
@@ -129,12 +148,44 @@ def handle_metrics():
                         SCRIPT_DURATION.labels(*metric.labels).observe(metric.value)
                     case MetricEnum.KAFKA_PRODUCER_DURATION:
                         KAFKA_PRODUCER_DURATION.labels(*metric.labels).observe(metric.value)
+                    case MetricEnum.PROCESS_CPU_USAGE:
+                        PROCESS_CPU_USAGE.labels(*metric.labels).set(metric.value)
+                    case MetricEnum.PROCESS_MEMORY_USAGE:
+                        PROCESS_MEMORY_USAGE.labels(*metric.labels).set(metric.value)
+                    case _:
+                        log.warning(f'Unsupported metric: {metric}')
             except KeyboardInterrupt:
                 log.warning(f'KeyboardInterrupt received. Exiting ...')
                 break
             except Exception as e:
                 log.error(f'fail set metric: {metric.name}, {e}')
 
+def collect_process_metrics(process_name, metrics_queue):
+    if metrics_queue:
+        try: 
+            process = psutil.Process(os.getpid())
 
+            # CPU usage (%)
+            cpu_percent = process.cpu_percent(interval=None)  # non-blocking
+            metrics_queue.put(
+                Metric(
+                    name = MetricEnum.PROCESS_CPU_USAGE,
+                    labels= [process_name],
+                    value = cpu_percent
+                )
+            )
+            
+            # Memory usage (MB)
+            memory_mb = process.memory_info().rss / 1024 / 1024  # RSS in MB
+            metrics_queue.put(
+                Metric(
+                    name = MetricEnum.PROCESS_MEMORY_USAGE,
+                    labels= [process_name],
+                    value = memory_mb
+                )
+            )
+
+        except Exception as e:
+            log.warning(f'fail get process metrics: {e}')
 
 
