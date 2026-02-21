@@ -98,7 +98,7 @@ class Tag:
         else:
             raise Exception(f'Unsupport tag type: {type_}<>{type(value)}')
 
-    def set(self, value, status) -> TagValue:
+    def set(self, value, status):
         self.status = status
         self.update_time = datetime.now(timezone.utc)
         if self.min_ == self.max_:
