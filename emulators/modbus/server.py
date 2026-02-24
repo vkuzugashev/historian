@@ -1,18 +1,134 @@
 import argparse
+from typing import Dict
 from pyModbusTCP.server import ModbusServer, DataBank
 from datetime import datetime
 import logging
+import random as rnd
+import math
 
 logging.basicConfig(level='DEBUG')
 log = logging.getLogger('ModbusEmulator')
 
 class MyDataBank(DataBank):
     """A custom ModbusServerDataBank for override get_holding_registers method."""
+    sources: Dict[str, dict] = {}
 
     def __init__(self):
         # turn off allocation of memory for standard modbus object types
         # only "holding registers" space will be replaced by dynamic build values.
         super().__init__(virtual_mode=True)
+        
+        # input registers
+        self.sources[f'RI{0}'] = {
+                'func': 'line',
+                'scale': 10,
+                'period': 0,
+                'phase': 0.0
+        }
+        self.sources[f'RI{1}'] = {
+                'func': 'rnd',
+                'scale': 10,
+                'period': 0,
+                'phase': 0.0
+        }
+        self.sources[f'RI{2}'] = {
+                'func': 'square',
+                'scale': 10,
+                'period': 15,
+                'phase': 0.0
+        }
+        self.sources[f'RI{3}'] = {
+                'func': 'sawtooth',
+                'scale': 10,
+                'period': 15,
+                'phase': 0.0
+        }
+        self.sources[f'RI{4}'] = {
+                'func': 'sin',
+                'scale': 10,
+                'period': 15,
+                'phase': 0.0
+        }
+        self.sources[f'RI{5}'] = {
+                'func': 'cos',
+                'scale': 10,
+                'period': 15,
+                'phase': 0.0
+        }
+
+        # holding registers
+        self.sources[f'RH{0}'] = {
+                'func': 'line',
+                'scale': 10,
+                'period': 0,
+                'phase': 0.0
+        }
+        self.sources[f'RH{1}'] = {
+                'func': 'rnd',
+                'scale': 10,
+                'period': 0,
+                'phase': 0.0
+        }
+        self.sources[f'RH{2}'] = {
+                'func': 'square',
+                'scale': 10,
+                'period': 15,
+                'phase': 0.0
+        }
+        self.sources[f'RH{3}'] = {
+                'func': 'sawtooth',
+                'scale': 10,
+                'period': 15,
+                'phase': 0.0
+        }
+        self.sources[f'RH{4}'] = {
+                'func': 'sin',
+                'scale': 10,
+                'period': 15,
+                'phase': 0.0
+        }
+        self.sources[f'RH{5}'] = {
+                'func': 'cos',
+                'scale': 10,
+                'period': 15,
+                'phase': 0.0
+        }
+
+    def calc_value(self, tag_name: str):
+        source = self.sources.get(tag_name)
+        if source:
+            if source['func'] == 'line':
+                return source['scale']
+            elif source['func'] == 'rnd':
+                return rnd.uniform(0, source['scale'])
+            elif source['func'] == 'square':
+                source['phase'] += self.cycle / source['period']
+                if source['phase'] > source['period']:
+                    source['phase'] = 0.0
+                    source['scale'] *= -1
+                return source['scale']
+            elif source['func'] == 'sawtooth':
+                source['phase'] += self.cycle / source['period']
+                if source['phase'] > source['scale']:
+                    source['phase'] = 0.0
+                return source['phase']
+            elif source['func'] == 'sin':
+                result = source['scale'] * math.sin(math.radians(source['phase']))
+            elif source['func'] == 'cos':
+                result = source['scale'] * math.cos(math.radians(source['phase']))
+            else:
+                raise ValueError(f"Unsupported function: {source['func']}")
+
+            # Инкрементируем фазу для периодических функций
+            if source['func'] in ['sin', 'cos']:
+                delta_phi = (360  * self.cycle) / (60.0 * source['period']) 
+                source['phase'] += delta_phi
+                if source['phase'] >= 360:
+                    source['phase'] %= 360
+                
+            return result
+        else:
+            return 0.0
 
     def get_coils(self, address, number=1, srv_info=None):
         """Get virtual coils registers."""
@@ -32,21 +148,15 @@ class MyDataBank(DataBank):
 
     def get_input_registers(self, address, number=1, srv_info=None):
         """Get virtual input registers."""
-        now = datetime.now()
-        v_regs_d = {0: now.day, 1: now.month, 2: now.year,
-                    3: now.hour, 4: now.minute, 5: now.second}
         try:
-            return [v_regs_d[a] for a in range(address, address+number)]
+            return [self.calc_value(f'RI{i}') for i in range(address, address+number)]
         except KeyError:
             return
 
     def get_holding_registers(self, address, number=1, srv_info=None):
         """Get virtual holding registers."""
-        now = datetime.now()
-        v_regs_d = {0: now.day, 1: now.month, 2: now.year,
-                    3: now.hour, 4: now.minute, 5: now.second}
         try:
-            return [v_regs_d[a] for a in range(address, address+number)]
+            return [self.calc_value(f'RH{i}') for i in range(address, address+number)]
         except KeyError:
             return
 
