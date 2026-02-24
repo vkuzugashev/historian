@@ -1,7 +1,7 @@
 import argparse
 from typing import Dict
 from pyModbusTCP.server import ModbusServer, DataBank
-from datetime import datetime, time
+import time
 import logging
 import random as rnd
 import math
