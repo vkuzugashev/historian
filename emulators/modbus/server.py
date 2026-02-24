@@ -1,7 +1,7 @@
 import argparse
 from typing import Dict
 from pyModbusTCP.server import ModbusServer, DataBank
-from datetime import datetime
+from datetime import datetime, time
 import logging
 import random as rnd
 import math
@@ -96,19 +96,24 @@ class MyDataBank(DataBank):
 
     def calc_value(self, tag_name: str):
         source = self.sources.get(tag_name)
+
         if source:
+            last_calc = source.get('last_calc', time.time() - 1000)
+            cycle = time.time() - last_calc
+            source['last_calc'] = time.time()
+
             if source['func'] == 'line':
                 return source['scale']
             elif source['func'] == 'rnd':
                 return rnd.uniform(0, source['scale'])
             elif source['func'] == 'square':
-                source['phase'] += self.cycle / source['period']
+                source['phase'] += cycle / source['period']
                 if source['phase'] > source['period']:
                     source['phase'] = 0.0
                     source['scale'] *= -1
                 return source['scale']
             elif source['func'] == 'sawtooth':
-                source['phase'] += self.cycle / source['period']
+                source['phase'] += cycle / source['period']
                 if source['phase'] > source['scale']:
                     source['phase'] = 0.0
                 return source['phase']
@@ -121,11 +126,11 @@ class MyDataBank(DataBank):
 
             # Инкрементируем фазу для периодических функций
             if source['func'] in ['sin', 'cos']:
-                delta_phi = (360  * self.cycle) / (60.0 * source['period']) 
+                delta_phi = (360  * cycle) / (60.0 * source['period']) 
                 source['phase'] += delta_phi
                 if source['phase'] >= 360:
                     source['phase'] %= 360
-                
+              
             return result
         else:
             return 0.0
