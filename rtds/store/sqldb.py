@@ -97,7 +97,7 @@ def set_connectors(connectors:dict):
                 id=item.name,
                 cycle=item.cycle,
                 is_read_only=item.is_read_only,
-                connection_string=";".join([f"{k}={v}" for k, v in item.connection_string.items()]),
+                connection_string=item.connection_string,
                 description=item.description,
                 updated_at=datetime.now(timezone.utc)
             )
