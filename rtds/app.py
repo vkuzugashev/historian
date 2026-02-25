@@ -216,7 +216,7 @@ def scan_cycle():
     if METRICS_ENABLED:
         start_time = time.time()
     
-    for connector_info in sorted(connector_infos.values()):
+    for _, connector_info in sorted(connector_infos.items()):
         connector_read(connector_info)
     for _, script in sorted(scripts.items()):
         script.run()
