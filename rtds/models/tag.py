@@ -74,7 +74,16 @@ class Tag:
     connector_name = None
     description: str = None
 
-    def __init__(self, name, type_, source=None, min_=None, max_=None, connector_name=None, is_log=False, value=0, description=None):
+    def __init__(self, 
+                 name, 
+                 type_, 
+                 source=None, 
+                 min_=None, 
+                 max_=None, 
+                 connector_name=None, 
+                 is_log=False, 
+                 value=0, 
+                 description=None):
         self.name = name
         self.type_ = type_
         self.source = source
@@ -83,34 +92,48 @@ class Tag:
         self.connector_name = connector_name
         self.is_log = is_log
         self.description = description
-        if type_ == TagType.BOOL:
-            self.value = bool(value)
-        elif type_ == TagType.INT:
-            self.value = int(value)
-        elif type_ == TagType.FLOAT:
-            self.value = float(value)
-        elif type_ == TagType.DATETIME:
+        self.__set_value(value)
+
+    def __set_value(self, value:object):
+        if self.type_ == TagType.BOOL:
+            if value is None:
+                self.status = -1
+                self.value = False
+            else:
+                self.value = bool(value)
+        elif self.type_ == TagType.INT:
+            if value is None:
+                self.status = -1
+                self.value = 0
+            else:
+                self.value = int(value)
+        elif self.type_ == TagType.FLOAT:
+            if value is None:
+                self.status = -1
+                self.value = 0.0
+            else:
+                self.value = float(value)
+        elif self.type_ == TagType.DATETIME:
             self.value = value
-        elif type_ == TagType.ARRAY:
+        elif self.type_ == TagType.ARRAY:
             self.value = value
-        elif type_ == TagType.STR:
+        elif self.type_ == TagType.STR:
             self.value = value
         else:
-            raise Exception(f'Unsupport tag type: {type_}<>{type(value)}')
+            raise Exception(f'Unsupport tag type: {self.type_}<>{type(value)}')
+        
+        # Проверим на ограничение
+        if self.value < self.min_:
+            self.value = self.min_
+            self.status = -1
+        elif self.value > self.max_:
+            self.value = self.max_
+            self.status = -1
 
     def set(self, value, status):
         self.status = status
         self.update_time = datetime.now(timezone.utc)
-        if self.min_ == self.max_:
-            self.value = value
-        elif value < self.min_:
-            self.value = self.min_
-            self.status = -1
-        elif value > self.max_:
-            self.value = self.max_
-            self.status = -1
-        else:
-            self.value = value
+        self.__set_value(value)
         return TagValue(self)
 
     def toJSON(self):

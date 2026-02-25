@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 sys.path.extend(['.', '..'])
 
 from models.tag import Tag as DTag, TagType, TagValue, get_tag_type, get_tag_value
-from connectors.connector_factory import get_connector
+from connectors.connector_info import ConnectorInfo
 from scripts.script import Script as DScript
 from loggers import logger
 from metrics import server as metrics
@@ -150,7 +150,7 @@ def get_config(server):
     """
     log.info('loading config from db')
     tags = {}
-    connectors = {}
+    connector_infos = {}
     scripts = {}
 
     engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
@@ -169,18 +169,15 @@ def get_config(server):
             tags[tag.name] = tag
 
         for item in session.scalars(select(Connector)).all():
-            connector = get_connector(name=item.id,
-                                  cycle=item.cycle,
-                                  connection_string=item.connection_string,
-                                  tags=[(key, tag) for key, tag in tags.items() if tag.connector_name==item.id],
-                                  is_read_only=item.is_read_only,
-                                  read_queue=mp.Queue(),
-                                  write_queue=mp.Queue() if item.is_read_only else None,
-                                  log_queue=server.log_queue if server else None,
-                                  metrics_queue=server.metrics_queue if server else None,
-                                  description=item.description
-                                  )
-            connectors[connector.name] = connector
+            connector_info = ConnectorInfo(
+                name=item.id,
+                cycle=item.cycle,
+                connection_string=item.connection_string,
+                tags = [(key, tag) for key, tag in tags.items() if tag.connector_name==item.id],
+                is_read_only=item.is_read_only,
+                description=item.description
+            )
+            connector_infos[item.id] = connector_info
 
         for item in session.scalars(select(Script)).all():
             script = DScript(
@@ -193,9 +190,9 @@ def get_config(server):
             scripts[script.name] = script
 
     # сохраним состояние конфигурации
-    set_state(connectors, tags, scripts)
+    set_state(connector_infos, tags, scripts)
 
-    return connectors, tags, scripts
+    return connector_infos, tags, scripts
 
 def set_config(connectors, tags, scripts):
     """

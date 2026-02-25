@@ -99,14 +99,17 @@ but got:
         except ValueError as e:
             self.log.error(f'Fail parse source: {source}, {e}')
             return None
-        if sl[0] == 'C':
-            return self._read_coils(sl[1], sl[2])
-        elif sl[0] == 'DI':
-            return self._read_discrete_inputs(sl[1], sl[2])
-        elif sl[0] == 'RI':
-            return self._read_input_registers(sl[1], sl[2])
-        elif sl[0] == 'RH':
-            return self._read_holding_registers(sl[1], sl[2])
+        try:
+            if sl[0] == 'C':
+                return self._read_coils(sl[1], sl[2])
+            elif sl[0] == 'DI':
+                return self._read_discrete_inputs(sl[1], sl[2])
+            elif sl[0] == 'RI':
+                return self._read_input_registers(sl[1], sl[2])
+            elif sl[0] == 'RH':
+                return self._read_holding_registers(sl[1], sl[2])
+        except Exception as e:
+            return None
         
     def open(self):
         self.log.debug(f'Opening connection to {self.host}:{self.port}')

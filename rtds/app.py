@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 
 sys.path.extend(['.','..'])
 
+from connectors import connector_factory
+from connectors.connector_info import ConnectorInfo
 from loggers import logger
 from configs import config_ods
 from models.tag import Tag, TagValue 
@@ -15,7 +17,7 @@ from metrics import server as metrics
 from producers import kafka_producer as producer
 
 tags = {}
-connectors = {}
+connector_infos = {}
 scripts = {}
 processes = {}
 
@@ -60,7 +62,7 @@ def set(value):
         tag = tags[value.name]
         if tag is not None:
             if tag.connector_name is not None:
-                connector = connectors[tag.connector_name]
+                connector = connector_infos[tag.connector_name]
                 if connector.write_queue is not None:
                     connector.write_queue.put(value)
             else:
@@ -116,27 +118,27 @@ def producer_run(log_queue, metrics_queue):
     except Exception as e:
         log.error(f'producer process stoped, error: {e}')
 
-def connector_run(connector):
+def connector_run(connector_info:ConnectorInfo, log_queue, metrics_queue):
     try:
-        connector.run()
+        connector_factory.run(connector_info, log_queue, metrics_queue)
     except Exception as e:
-        log.error(f'connector {connector.name} stoped, error: {e}')
+        log.error(f'connector {connector_info.name} stoped, error: {e}')
 
-def connector_read(connector):
-    log.debug(f'connector {connector.name} read process start ...')
+def connector_read(connector_info:ConnectorInfo):
+    log.debug(f'connector {connector_info.name} read process start ...')
 
-    while not connector.read_queue.empty():
-        value = connector.read_queue.get()
+    while not connector_info.read_queue.empty():
+        value = connector_info.read_queue.get()
         _set(value)
 
-    log.debug(f'connector {connector.name} read process stop')
+    log.debug(f'connector {connector_info.name} read process stop')
 
 # загрузить конфигурацию
 def load_config():
-    global connectors, tags, scripts    
-    connectors, tags, scripts = store.get_config(server=sys.modules[__name__])
-    log.info(f'Loaded config, connectors: {len(connectors)}, tags: {len(tags)}, scripts: {len(scripts)}')
-    return connectors, tags, scripts
+    global connector_infos, tags, scripts    
+    connector_infos, tags, scripts = store.get_config(server=sys.modules[__name__])
+    log.info(f'Loaded config, connectors: {len(connector_infos)}, tags: {len(tags)}, scripts: {len(scripts)}')
+    return connector_infos, tags, scripts
 
 def start_process(process_name, target, args):
     p = mp.Process(target=target, args=args)
@@ -159,36 +161,36 @@ def stop_processes():
 def check_processes():
     for key, process in processes.items():
         if not process.is_alive():
-            raise Exception(f'process {key} stoped')            
+            raise Exception(f'Check process {key}, procees is stoped')            
 
-def start_connectors():
-    for connector in connectors.values():
+def start_connectors(log_queue:mp.Queue, metrics_queue:mp.Queue):
+    for connector_info in connector_infos.values():
         try:
-            log.info(f'start connector {connector.name} ...')
-            p = mp.Process(target=connector_run, args=(connector,))
+            log.info(f'start connector {connector_info.name} ...')
+            p = mp.Process(target=connector_run, args=(connector_info, log_queue, metrics_queue))
             p.start()
-            processes[connector.name] = p
-            log.info(f'connector {connector.name} started')
+            processes[connector_info.name] = p
+            log.info(f'connector {connector_info.name} started')
         except Exception as e:
-            log.error(f'Fail start connector {connector.name}, error: {e}')
+            log.error(f'Fail start connector {connector_info.name}, error: {e}')
 
 def stop_connectors():
-    for connector in connectors.values():
-        process = processes.get(connector.name)
+    for connector_info in connector_infos.values():
+        process = processes.get(connector_info.name)
         if process:
             try:
                 if not process.is_alive():
-                    log.warning(f'connector process {connector.name} is already stoped')
+                    log.warning(f'connector process {connector_info.name} is already stoped')
                     continue
-                log.info(f'connector process {connector.name} stoping ...')
+                log.info(f'connector process {connector_info.name} stoping ...')
                 process.terminate()
                 process.join(PROCESS_STOP_TIMEOUT)
-                log.info(f'connector process {connector.name}, stoped')
+                log.info(f'connector process {connector_info.name}, stoped')
             except Exception as e:
-                log.error(f'connector process {connector.name}, stoped with error: {e}')
-            processes.pop(connector.name)
+                log.error(f'connector process {connector_info.name}, stoped with error: {e}')
+            processes.pop(connector_info.name)
         else:
-            log.warning(f'connector process {connector.name} not found')
+            log.warning(f'connector process {connector_info.name} not found')
 
 
 def reload_config():   
@@ -214,8 +216,8 @@ def scan_cycle():
     if METRICS_ENABLED:
         start_time = time.time()
     
-    for _, connector in sorted(connectors.items()):
-        connector_read(connector)
+    for connector_info in sorted(connector_infos.values()):
+        connector_read(connector_info)
     for _, script in sorted(scripts.items()):
         script.run()
     
@@ -237,7 +239,7 @@ def run():
         if KAFKA_ENABLED:
             start_process(process_name='producer', target=producer_run, args=(log_queue, metrics_queue,))  
 
-        start_connectors()
+        start_connectors(log_queue, metrics_queue)
         log.info('wait 5 sec ...')
         time.sleep(5)
         log.info('server loop started')
@@ -245,7 +247,7 @@ def run():
         # Добавить cчетчики
         if METRICS_ENABLED:
             metrics_queue.put(metrics.Metric(metrics.MetricEnum.TAG_COUNTER, len(tags)))
-            metrics_queue.put(metrics.Metric(metrics.MetricEnum.CONNECTOR_COUNTER, len(connectors)))
+            metrics_queue.put(metrics.Metric(metrics.MetricEnum.CONNECTOR_COUNTER, len(connector_infos)))
 
         last_collect_metrics = time.time()
         try:
@@ -280,9 +282,9 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         log.info(f'load config from file: {sys.argv[1]}')
         configFile = os.path.join(str(Path(__name__).parent), sys.argv[1])
-        connectors, tags, scripts = config_ods.load_from_file(configFile=configFile)
-        log.info(f'Connectors: {len(connectors)}, Tags: {len(tags)}, Scripts: {len(scripts)}')
-        store.set_config(connectors, tags, scripts)
+        connector_infos, tags, scripts = config_ods.load_from_file(configFile=configFile)
+        log.info(f'Connectors: {len(connector_infos)}, Tags: {len(tags)}, Scripts: {len(scripts)}')
+        store.set_config(connector_infos, tags, scripts)
     try:
         run()
     except BaseException as e:

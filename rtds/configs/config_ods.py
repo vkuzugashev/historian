@@ -4,7 +4,7 @@ from typing import OrderedDict
 from pyexcel_ods3 import get_data, save_data
 from models.tag import Tag, get_tag_type
 from scripts.script import Script
-from connectors.connector_factory import get_connector
+from connectors.connector_info import ConnectorInfo
 from loggers import logger
 
 log = logger.get_logger('config')
@@ -41,14 +41,15 @@ def load_from_dict(data:dict):
     rows = data['Connectors']
     for row in rows[1:]:
         item = dict(zip(rows[0], row))
-        connector = get_connector(name=item['name'],
-                                  cycle=item['cycle'],
-                                  connection_string=item['connection_string'],
-                                  tags=[(key, tag) for key, tag in tags.items() if tag.connector_name==item['name']],
-                                  is_read_only=True if item.get('is_read_only') == 1 else False,
-                                  description=item.get('description')
-                                  )
-        connectors[connector.name] = connector
+        connector_info = ConnectorInfo(
+            name=item['name'],
+            cycle=item['cycle'],
+            connection_string=item['connection_string'],
+            tags=[(key, tag) for key, tag in tags.items() if tag.connector_name==item['name']],
+            is_read_only=True if item.get('is_read_only') == 1 else False,
+            description=item.get('description')
+        )
+        connectors[connector_info.name] = connector_info
 
     #load connectors
     rows = data['Scripts']
