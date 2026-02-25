@@ -130,14 +130,14 @@ but got:
             if result_list is None:
                 value = None
                 status=-1
-                self.log.error(f'fail read modbus address: {tag.source}')
+                self.log.error(f'fail read modbus address: {key}, {tag.source}')
             elif len(result_list) == 1:
                 value = result_list[0]
             elif len(result_list) > 1:
                 value = result_list
             else:
                 value = result_list
-            self.log.debug(f'read modbus address: {tag.source} and get value: {value}')
+            self.log.debug(f'read modbus address: {key}, {tag.source} and get value: {value}')
             tgv = TagValue(name=key, type_=tag.type_, status=status, value=value)
             self.read_queue.put(tgv)
 

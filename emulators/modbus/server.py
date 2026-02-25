@@ -21,37 +21,37 @@ class MyDataBank(DataBank):
         # input registers
         self.sources[f'RI{0}'] = {
                 'func': 'line',
-                'scale': 10,
+                'scale': 100,
                 'period': 0,
                 'phase': 0.0
         }
         self.sources[f'RI{1}'] = {
                 'func': 'rnd',
-                'scale': 10,
+                'scale': 100,
                 'period': 0,
                 'phase': 0.0
         }
         self.sources[f'RI{2}'] = {
                 'func': 'square',
-                'scale': 10,
+                'scale': 100,
                 'period': 15,
                 'phase': 0.0
         }
         self.sources[f'RI{3}'] = {
                 'func': 'sawtooth',
-                'scale': 10,
+                'scale': 100,
                 'period': 15,
                 'phase': 0.0
         }
         self.sources[f'RI{4}'] = {
                 'func': 'sin',
-                'scale': 10,
+                'scale': 100,
                 'period': 15,
                 'phase': 0.0
         }
         self.sources[f'RI{5}'] = {
                 'func': 'cos',
-                'scale': 10,
+                'scale': 100,
                 'period': 15,
                 'phase': 0.0
         }
@@ -59,37 +59,37 @@ class MyDataBank(DataBank):
         # holding registers
         self.sources[f'RH{0}'] = {
                 'func': 'line',
-                'scale': 10,
+                'scale': 100,
                 'period': 0,
                 'phase': 0.0
         }
         self.sources[f'RH{1}'] = {
                 'func': 'rnd',
-                'scale': 10,
+                'scale': 100,
                 'period': 0,
                 'phase': 0.0
         }
         self.sources[f'RH{2}'] = {
                 'func': 'square',
-                'scale': 10,
+                'scale': 100,
                 'period': 15,
                 'phase': 0.0
         }
         self.sources[f'RH{3}'] = {
                 'func': 'sawtooth',
-                'scale': 10,
+                'scale': 100,
                 'period': 15,
                 'phase': 0.0
         }
         self.sources[f'RH{4}'] = {
                 'func': 'sin',
-                'scale': 10,
+                'scale': 100,
                 'period': 15,
                 'phase': 0.0
         }
         self.sources[f'RH{5}'] = {
                 'func': 'cos',
-                'scale': 10,
+                'scale': 100,
                 'period': 15,
                 'phase': 0.0
         }
@@ -103,20 +103,23 @@ class MyDataBank(DataBank):
             source['last_calc'] = time.time()
 
             if source['func'] == 'line':
-                return source['scale']
+                return int(source['scale'])
             elif source['func'] == 'rnd':
-                return rnd.uniform(0, source['scale'])
+                return int(rnd.uniform(0, source['scale']))
             elif source['func'] == 'square':
                 source['phase'] += cycle / source['period']
                 if source['phase'] > source['period']:
                     source['phase'] = 0.0
                     source['scale'] *= -1
-                return source['scale']
+                if source['scale'] > 0:
+                    return int(source['scale'])
+                else:
+                    return 0
             elif source['func'] == 'sawtooth':
                 source['phase'] += cycle / source['period']
                 if source['phase'] > source['scale']:
                     source['phase'] = 0.0
-                return source['phase']
+                return int(source['phase'])
             elif source['func'] == 'sin':
                 result = source['scale'] * math.sin(math.radians(source['phase']))
             elif source['func'] == 'cos':
@@ -131,9 +134,9 @@ class MyDataBank(DataBank):
                 if source['phase'] >= 360:
                     source['phase'] %= 360
               
-            return result
+            return abs(int(result))
         else:
-            return 0.0
+            return 0
 
     def get_coils(self, address, number=1, srv_info=None):
         """Get virtual coils registers."""

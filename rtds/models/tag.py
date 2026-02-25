@@ -96,19 +96,19 @@ class Tag:
 
     def __set_value(self, value:object):
         if self.type_ == TagType.BOOL:
-            if value is None:
+            if not value:
                 self.status = -1
                 self.value = False
             else:
                 self.value = bool(value)
         elif self.type_ == TagType.INT:
-            if value is None:
+            if not value:
                 self.status = -1
                 self.value = 0
             else:
                 self.value = int(value)
         elif self.type_ == TagType.FLOAT:
-            if value is None:
+            if not value:
                 self.status = -1
                 self.value = 0.0
             else:
@@ -123,12 +123,15 @@ class Tag:
             raise Exception(f'Unsupport tag type: {self.type_}<>{type(value)}')
         
         # Проверим на ограничение
-        if self.value < self.min_:
-            self.value = self.min_
-            self.status = -1
-        elif self.value > self.max_:
-            self.value = self.max_
-            self.status = -1
+        if self.type_ in [TagType.INT, TagType.FLOAT]:
+            if self.min_ == self.max_:
+                return
+            elif self.value < self.min_:
+                self.value = self.min_
+                self.status = -1
+            elif self.value > self.max_:
+                self.value = self.max_
+                self.status = -1
 
     def set(self, value, status):
         self.status = status
