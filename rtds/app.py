@@ -104,7 +104,6 @@ def api_command_handler():
 
 def metrics_run(log_queue, metrics_queue):
     log.info('metrics process started')
-
     try:
         metrics.run(4000, log_queue, metrics_queue)
     except Exception as e:
@@ -112,7 +111,6 @@ def metrics_run(log_queue, metrics_queue):
 
 def producer_run(log_queue, metrics_queue):
     log.info('producer process started')
-
     try:
         producer.run(log_queue, metrics_queue)
     except Exception as e:

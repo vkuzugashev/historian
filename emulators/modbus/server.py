@@ -155,14 +155,16 @@ class MyDataBank(DataBank):
         """Get virtual input registers."""
         try:
             return [self.calc_value(f'RI{i}') for i in range(address, address+number)]
-        except KeyError:
+        except Exception as e:
+            print(f"KeyError: {e}")
             return
 
     def get_holding_registers(self, address, number=1, srv_info=None):
         """Get virtual holding registers."""
         try:
             return [self.calc_value(f'RH{i}') for i in range(address, address+number)]
-        except KeyError:
+        except Exception as e:
+            print(f"KeyError: {e}")
             return
 
 

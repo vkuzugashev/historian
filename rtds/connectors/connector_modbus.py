@@ -1,13 +1,10 @@
 from multiprocessing import Queue
 import queue
-from dataclasses import dataclass
 from pyModbusTCP.client import ModbusClient
 from loggers import logger
 from models.tag import TagType, Tag, TagValue
 from connectors.connector_abc import ConnectorABC
 
-
-@dataclass
 class ConnectorModbus(ConnectorABC):
     '''
     ConnectorModbus v0.1
@@ -100,7 +97,7 @@ but got:
         try:
             sl = self._source_parse(source)
         except ValueError as e:
-            self.log.error(e.message)
+            self.log.error(f'Fail parse source: {source}, {e}')
             return None
         if sl[0] == 'C':
             return self._read_coils(sl[1], sl[2])
@@ -112,10 +109,12 @@ but got:
             return self._read_holding_registers(sl[1], sl[2])
         
     def open(self):
+        self.log.debug(f'Opening connection to {self.host}:{self.port}')
         if not self.auto_open:
             self.client.open()
 
     def close(self):
+        self.log.debug(f'Closing connection to {self.host}:{self.port}')
         if not self.auto_close:
             self.client.close()
         
