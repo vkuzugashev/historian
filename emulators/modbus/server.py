@@ -51,6 +51,14 @@ class MyDataBank(DataBank):
             return
 
 
+    def set_holding_registers(self, address, values, srv_info=None):
+        """Set virtual holding registers."""
+        if address + len(values) > 100:  # Предполагаем, что максимальное количество регистров - 100
+            raise Exception("Illegal Data Address")
+#        for i, value in enumerate(values):
+#            self._hregs[address + i] = value
+        return True
+
 if __name__ == '__main__':
     log.info("Starting ModbusEmilitor server...")
     # parse args
