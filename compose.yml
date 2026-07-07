@@ -2,7 +2,7 @@ services:
   # === PostgreSQL Database ===
   postgres:
     image: timescale/timescaledb:latest-pg18
-    container_name: kmes-postgres
+    container_name: historian-postgres
     environment:
       POSTGRES_DB: historydb
       POSTGRES_USER: postgres
@@ -10,17 +10,23 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
       - ./historian/store/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 200M  # Жесткий лимит памяти
+        reservations:
+          memory: 150M  # Гарантированный минимум (опционально)
 
   kafka:
     image: apache/kafka:latest
-    container_name: kafka
+    container_name: historian-kafka
     ports:
       - "9092:9092"
     environment:
@@ -36,13 +42,17 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
     volumes:
       - kafka_data:/kafka
+    deploy:
+      resources:
+        limits:
+          memory: 600M  # Жесткий лимит памяти
+        reservations:
+          memory: 500M  # Гарантированный минимум (опционально)
     restart: unless-stopped
 
   # === Historian Service ===
   historian:
-    build: 
-      context: ./historian
-      dockerfile: Dockerfile
+    build: . 
     env_file:
       - ./historian/.env
     depends_on:
@@ -50,6 +60,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 100M  # Жесткий лимит памяти
+        reservations:
+          memory: 70M  # Гарантированный минимум (опционально)
     restart: unless-stopped
 
   # === Emulator ===
@@ -57,17 +73,21 @@ services:
     build:
       context: ./emulators/modbus
       dockerfile: Dockerfile
-    container_name: modbus-emulator
+    container_name: historian-modbus-emulator
     ports:
       - "5502:5502"
+    deploy:
+      resources:
+        limits:
+          memory: 15M  # Жесткий лимит памяти
+        reservations:
+          memory: 10M  # Гарантированный минимум (опционально)
     restart: unless-stopped
 
   # === RTDS (Real-Time Data Service) ===
   rtds:
-    build:
-      context: ./rtds
-      dockerfile: Dockerfile
-    container_name: kmes-rtds
+    build: .
+    container_name: historian-rtds
     env_file:
       - ./rtds/.env
     ports:
@@ -78,12 +98,18 @@ services:
     depends_on:
       - kafka
       - emulator
+    deploy:
+      resources:
+        limits:
+          memory: 200M  # Жесткий лимит памяти
+        reservations:
+          memory: 150M  # Гарантированный минимум (опционально)
     restart: unless-stopped
 
   # === Prometheus ===
   prometheus:
     image: prom/prometheus:latest
-    container_name: kmes-prometheus
+    container_name: historian-prometheus
     ports:
       - "9090:9090"
     volumes:
@@ -99,7 +125,7 @@ services:
   # === Grafana (опционально) ===
   grafana:
     image: grafana/grafana:latest
-    container_name: kmes-grafana
+    container_name: historian-grafana
     ports:
       - "3000:3000"
     environment:
@@ -110,6 +136,12 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - prometheus
+    deploy:
+      resources:
+        limits:
+          memory: 400M  # Жесткий лимит памяти
+        reservations:
+          memory: 350M  # Гарантированный минимум (опционально)
     restart: unless-stopped
 
 volumes:
