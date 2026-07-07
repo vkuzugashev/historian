@@ -46,7 +46,7 @@ SELECT create_hypertable('history_integers', 'tag_time');
 SELECT create_hypertable('history_strings', 'tag_time');
 
 -- Устанавливаем политику хранения данных
-SELECT add_retention_policy('history_bools', INTERVAL '30 days');
-SELECT add_retention_policy('history_floats', INTERVAL '30 days');
-SELECT add_retention_policy('history_integers', INTERVAL '30 days');
-SELECT add_retention_policy('history_strings', INTERVAL '30 days');
+SELECT add_retention_policy('history_bools', drop_after => INTERVAL '4 hours', if_not_exists => TRUE);
+SELECT add_retention_policy('history_floats', drop_after => INTERVAL '4 hours', if_not_exists => TRUE);
+SELECT add_retention_policy('history_integers', drop_after => INTERVAL '4 hours', if_not_exists => TRUE);
+SELECT add_retention_policy('history_strings', drop_after => INTERVAL '4 hours', if_not_exists => TRUE
