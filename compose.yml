@@ -64,7 +64,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 600M  # Жесткий лимит памяти
+          memory: 650M  # Жесткий лимит памяти
         reservations:
           memory: 500M  # Гарантированный минимум (опционально)
     restart: unless-stopped
@@ -120,7 +120,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 200M  # Жесткий лимит памяти
+          memory: 250M  # Жесткий лимит памяти
         reservations:
           memory: 150M  # Гарантированный минимум (опционально)
     restart: unless-stopped
@@ -141,6 +141,12 @@ services:
       - '--storage.tsdb.retention.size=500MB'   # Максимальный размер хранилища
       - '--web.console.libraries=/etc/prometheus/consoles'
       - '--web.console.templates=/etc/prometheus/consoles'
+    deploy:
+      resources:
+        limits:
+          memory: 100M  # Жесткий лимит памяти
+        reservations:
+          memory: 50M  # Гарантированный минимум (опционально)      
     restart: unless-stopped
 
   # === Grafana (опционально) ===
