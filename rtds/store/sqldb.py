@@ -332,8 +332,10 @@ def get_current():
 def set_state(connectors, tags, scripts):
     engine = get_engine()    
     with Session(engine) as session:
-        # удалить старые записи
-        session.query(State).delete()
+        
+        # удалить старые записи (connectors, tags, scripts, config_time)
+        stmt = delete(State).where(State.id.in_(['connectors', 'tags', 'scripts', 'config_time']))
+        session.execute(stmt)
 
         if connectors:
             count = len(connectors)
