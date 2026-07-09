@@ -23,7 +23,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 200M  # Жесткий лимит памяти
+          memory: 350M  # Жесткий лимит памяти
         reservations:
           memory: 150M  # Гарантированный минимум (опционально)
 
@@ -64,7 +64,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 650M  # Жесткий лимит памяти
+          memory: 750M  # Жесткий лимит памяти
         reservations:
           memory: 500M  # Гарантированный минимум (опционально)
     restart: unless-stopped
@@ -120,7 +120,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 250M  # Жесткий лимит памяти
+          memory: 350M  # Жесткий лимит памяти
         reservations:
           memory: 150M  # Гарантированный минимум (опционально)
     restart: unless-stopped
