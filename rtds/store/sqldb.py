@@ -1,11 +1,10 @@
-import multiprocessing as mp
 import time
 from typing import Optional
 from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime, Text, func, select, delete, and_
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from datetime import datetime, timedelta, timezone
-import sys, os, psutil
+import sys, os
 from dotenv import load_dotenv
 
 sys.path.extend(['.', '..'])
@@ -423,9 +422,9 @@ def delete_old_history():
                 session.commit()
                 
                 if deleted_count > 0:
-                    log.info(f'deleted old history: {deleted_count} rows')
+                    log.info(f'deleted old history: {deleted_count} rows, pid {os.getpid()}')
                 else:
-                    log.info(f'no old history')
+                    log.info(f'no old history, pid {os.getpid()}')
 
                 if metrics_queue:
                     metrics_queue.put(
