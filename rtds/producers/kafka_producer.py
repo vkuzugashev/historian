@@ -69,9 +69,10 @@ def send_history_batch(last_id: int) -> int:
                     log.info("State record not found!")
                     last_id = 0
                 else:
+                    log.info(f"State record found: {state.value}")
                     last_id = int(state.value)
             
-            log.debug(f"Fetching history records after ID: {last_id}")
+            log.info(f"Fetching history records after ID: {last_id}")
 
             # Выбираем следующие записи (упорядочено по tag_time, tag_id)
             stmt = (
