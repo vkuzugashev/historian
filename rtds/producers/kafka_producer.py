@@ -67,19 +67,19 @@ def send_history_batch(last_id: int) -> int:
         try:
             start_time = time.time()
     
-            # if last_id < 0:
+            if last_id < 0:
             # Получаем последний отправленный ID из State
-            state = session.execute(
-                select(State).where(State.id=='producer_last_id')
-                ).scalar_one_or_none()
-            if not state:
-                log.info("State record for producer_last_id not found, set last_id=0!")
-                last_id = 0
-            else:
-                log.info(f"State record for producer_last_id found: last_id={state.value}")
-                last_id = int(state.value)
+                state = session.execute(
+                    select(State).where(State.id=='producer_last_id')
+                    ).scalar_one_or_none()
+                if not state:
+                    log.info("State record for producer_last_id not found, set last_id=0!")
+                    last_id = 0
+                else:
+                    log.info(f"State record for producer_last_id found: last_id={state.value}")
+                    last_id = int(state.value)
             
-            log.info(f"Fetching history records after ID: {last_id}")
+            log.debug(f"Fetching history records after ID: {last_id}")
 
             # Выбираем следующие записи (упорядочено по tag_time, tag_id)
             stmt = (
@@ -92,7 +92,7 @@ def send_history_batch(last_id: int) -> int:
             rows = session.execute(stmt).all()
 
             if not rows:
-                log.info("No new history records to send.")
+                log.debug("No new history records to send.")
                 time.sleep(1)
                 return last_id
 
@@ -121,7 +121,7 @@ def send_history_batch(last_id: int) -> int:
             producer.flush()  # Ждём подтверждения отправки
             
             last_id = max_id
-            log.info(f"Sent {len(messages)} history records to Kafka. Last ID: {last_id}")
+            log.debug(f"Sent {len(messages)} history records to Kafka. Last ID: {last_id}")
             
             # Обновляем State
             # Атомарный UPSERT для всех записей
@@ -131,7 +131,7 @@ def send_history_batch(last_id: int) -> int:
             )            
             session.execute(on_conflict_stmt)
             session.commit()
-            log.info(f"Updated state producer_last_id={last_id}")
+            log.debug(f"Updated state producer_last_id={last_id}")
             
             if shared_metrics_queue:
                 shared_metrics_queue.put(
