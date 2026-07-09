@@ -71,7 +71,9 @@ services:
 
   # === Historian Service ===
   historian:
-    build: . 
+    build:
+      context: ./historian
+      dockerfile: Dockerfile
     env_file:
       - ./historian/.env
     depends_on:
@@ -105,7 +107,9 @@ services:
 
   # === RTDS (Real-Time Data Service) ===
   rtds:
-    build: .
+    build:
+      context: ./rtds
+      dockerfile: Dockerfile
     container_name: historian-rtds
     env_file:
       - ./rtds/.env
