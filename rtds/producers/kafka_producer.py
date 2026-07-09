@@ -92,7 +92,8 @@ def send_history_batch(last_id: int) -> int:
             rows = session.execute(stmt).all()
 
             if not rows:
-                log.debug("No new history records to send.")
+                log.info("No new history records to send.")
+                time.sleep(1)
                 return last_id
 
             # Подготовка данных для Kafka
@@ -186,7 +187,6 @@ def run(log_queue=None, metrics_queue=None):    # Start up the server to expose 
                     last_collect_metrics = time.time()
                     # Метрики kafka producer
                     metrics.collect_process_metrics('producer', metrics_queue)
-            time.sleep(0.1)  # Задержка между отправками
         except KeyboardInterrupt:
             log.info('KeyboardInterrupt received. Exiting...')
             break
