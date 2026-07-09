@@ -62,22 +62,22 @@ def send_history_batch(last_id: int) -> int:
     Отправляет пачку записей из History в Kafka и обновляет State.
     Выбирает записи с ID > producer_last_id.
     """
-    
+    engine = get_engine()
     with Session(engine) as session:
         try:
             start_time = time.time()
     
-            if last_id < 0:
-                # Получаем последний отправленный ID из State
-                state = session.execute(
-                    select(State).where(State.id=='producer_last_id')
-                    ).scalar_one_or_none()
-                if not state:
-                    log.info("State record for producer_last_id not found, set last_id=0!")
-                    last_id = 0
-                else:
-                    log.info(f"State record for producer_last_id found: last_id={state.value}")
-                    last_id = int(state.value)
+            # if last_id < 0:
+            # Получаем последний отправленный ID из State
+            state = session.execute(
+                select(State).where(State.id=='producer_last_id')
+                ).scalar_one_or_none()
+            if not state:
+                log.info("State record for producer_last_id not found, set last_id=0!")
+                last_id = 0
+            else:
+                log.info(f"State record for producer_last_id found: last_id={state.value}")
+                last_id = int(state.value)
             
             log.info(f"Fetching history records after ID: {last_id}")
 
