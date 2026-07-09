@@ -103,7 +103,8 @@ def send_history_batch(last_id: int) -> int:
                     "vv": row.History.var_value
                 }
                 messages.append(msg)
-                max_id = row.History.id  # Обновляем до последней временной метки
+                if max_id < row.History.id:
+                    max_id = row.History.id  # Обновляем до последней временной метки
 
             # Отправка в Kafka
             log.debug(f'Sending message: count={len(messages)}')
@@ -111,17 +112,17 @@ def send_history_batch(last_id: int) -> int:
             producer.flush()  # Ждём подтверждения отправки
             
             last_id = max_id
-            log.debug(f"Sent {len(messages)} history records to Kafka. Last ID: {last_id}")
+            log.info(f"Sent {len(messages)} history records to Kafka. Last ID: {last_id}")
             
             # Обновляем State
             # Атомарный UPSERT для всех записей
             stmt = sqlite_insert(State).values({'id':'producer_last_id', 'value': f'{last_id}'})
             on_conflict_stmt = stmt.on_conflict_do_update(
-                index_elements=[State.id], set_={"value": stmt.excluded.value}
+                index_elements=[State.id], set_={"value": stmt.excluded.value, "description": "Last sended id to kafka"}
             )            
             session.execute(on_conflict_stmt)
             session.commit()
-            log.debug(f"Updated state producer_last_id={last_id}")
+            log.info(f"Updated state producer_last_id={last_id}")
             
             if shared_metrics_queue:
                 shared_metrics_queue.put(
