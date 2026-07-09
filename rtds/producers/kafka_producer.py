@@ -66,7 +66,7 @@ def send_history_batch(last_id: int) -> int:
                 state = session.execute(
                     select(State).where(State.id=='producer_last_id')).scalar_one_or_none()
                 if not state:
-                    log.debug("State record not found!")
+                    log.info("State record not found!")
                     last_id = 0
                 else:
                     last_id = int(state.value)
@@ -85,7 +85,6 @@ def send_history_batch(last_id: int) -> int:
 
             if not rows:
                 log.debug("No new history records to send.")
-                time.sleep(0.1)
                 return last_id
 
             # Подготовка данных для Kafka
