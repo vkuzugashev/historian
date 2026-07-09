@@ -51,14 +51,12 @@ def close_resources():
         log.info('Closing resources...')
         producer.close()
 
-def send_history_batch():
+def send_history_batch(last_id: int) -> int:
     """
     Отправляет пачку записей из History в Kafka и обновляет State.
     Выбирает записи с ID > producer_last_id.
     """
     
-    last_id = -1
-
     with Session(engine) as session:
         try:
             start_time = time.time()
@@ -88,7 +86,7 @@ def send_history_batch():
             if not rows:
                 log.debug("No new history records to send.")
                 time.sleep(0.1)
-                return
+                return last_id
 
             # Подготовка данных для Kafka
             messages = []
@@ -118,17 +116,13 @@ def send_history_batch():
             
             # Обновляем State
             # Атомарный UPSERT для всех записей
-            try:
-                stmt = sqlite_insert(State).values({'id':'producer_last_id', 'value': f'{last_id}'})
-                on_conflict_stmt = stmt.on_conflict_do_update(
-                    index_elements=[State.id], set_={"value": stmt.excluded.value}
-                )            
-                session.execute(on_conflict_stmt)
-                session.commit()
-                log.debug(f"Updated state producer_last_id={last_id}")
-            except Exception as e:
-                log.error(f'Fail to update state producer_last_id={last_id}, {e}')
-
+            stmt = sqlite_insert(State).values({'id':'producer_last_id', 'value': f'{last_id}'})
+            on_conflict_stmt = stmt.on_conflict_do_update(
+                index_elements=[State.id], set_={"value": stmt.excluded.value}
+            )            
+            session.execute(on_conflict_stmt)
+            session.commit()
+            log.debug(f"Updated state producer_last_id={last_id}")
             
             if shared_metrics_queue:
                 shared_metrics_queue.put(
@@ -152,7 +146,7 @@ def send_history_batch():
                         value  = time.time() - start_time
                     )
                 )
-            raise
+            return last_id
 
 def success_callback(records):
     log.debug(f"Kafka delivery successful: partition={records.partition}, offset={records.offset}")
@@ -169,11 +163,14 @@ def run(log_queue=None, metrics_queue=None):    # Start up the server to expose 
     log = logger.get_logger('producer', log_queue)
     log.info(f'Kafka producer started: KAFKA_BOOTSTRAP_SERVERS={KAFKA_BOOTSTRAP_SERVERS}, KAFKA_TOPIC={KAFKA_TOPIC}')    
     
+    init()
+
     last_collect_metrics = time.time()
+    last_id = -1
+
     while True:        
         try:
-            init()
-            send_history_batch()
+            last_id = send_history_batch(last_id)
             if metrics_queue:
                 if time.time() - last_collect_metrics > 60:
                     last_collect_metrics = time.time()
