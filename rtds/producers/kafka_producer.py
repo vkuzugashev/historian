@@ -56,18 +56,22 @@ def send_history_batch():
     Отправляет пачку записей из History в Kafka и обновляет State.
     Выбирает записи с ID > producer_last_id.
     """
+    
+    last_id = -1
+
     with Session(engine) as session:
         try:
             start_time = time.time()
-
-            # Получаем последний отправленный ID из State
-            state = session.execute(
-                select(State).where(State.id=='producer_last_id')).scalar_one_or_none()
-            if not state:
-                log.debug("State record not found!")
-                last_id = 0
-            else:
-                last_id = int(state.value)
+    
+            if last_id < 0:
+                # Получаем последний отправленный ID из State
+                state = session.execute(
+                    select(State).where(State.id=='producer_last_id')).scalar_one_or_none()
+                if not state:
+                    log.debug("State record not found!")
+                    last_id = 0
+                else:
+                    last_id = int(state.value)
             
             log.debug(f"Fetching history records after ID: {last_id}")
 
@@ -108,17 +112,24 @@ def send_history_batch():
             log.debug(f'Sending message: count={len(messages)}')
             producer.send(KAFKA_TOPIC, value=messages).add_callback(success_callback).add_errback(error_callback)
             producer.flush()  # Ждём подтверждения отправки
-
+            
+            last_id = max_id
+            log.debug(f"Sent {len(messages)} history records to Kafka. Last ID: {last_id}")
+            
             # Обновляем State
             # Атомарный UPSERT для всех записей
-            stmt = sqlite_insert(State).values({'id':'producer_last_id', 'value': f'{max_id}'})
-            on_conflict_stmt = stmt.on_conflict_do_update(
-                index_elements=[State.id], set_={"value": stmt.excluded.value}
-            )            
-            session.execute(on_conflict_stmt)
-            session.commit()
+            try:
+                stmt = sqlite_insert(State).values({'id':'producer_last_id', 'value': f'{last_id}'})
+                on_conflict_stmt = stmt.on_conflict_do_update(
+                    index_elements=[State.id], set_={"value": stmt.excluded.value}
+                )            
+                session.execute(on_conflict_stmt)
+                session.commit()
+                log.debug(f"Updated state producer_last_id={last_id}")
+            except Exception as e:
+                log.error(f'Fail to update state producer_last_id={last_id}, {e}')
 
-            log.debug(f"Sent {len(messages)} history records to Kafka. Last ID: {max_id}")
+            
             if shared_metrics_queue:
                 shared_metrics_queue.put(
                     metrics.Metric(
