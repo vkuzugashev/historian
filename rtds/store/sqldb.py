@@ -423,9 +423,9 @@ def delete_old_history():
                 session.commit()
                 
                 if deleted_count > 0:
-                    log.debug(f'deleted old history: {deleted_count} rows')
+                    log.info(f'deleted old history: {deleted_count} rows')
                 else:
-                    log.debug(f'no old history')
+                    log.info(f'no old history')
 
                 if metrics_queue:
                     metrics_queue.put(
@@ -486,7 +486,7 @@ def collect_store_metrics():
             log.warning(f'Fail get store size {e}')
         
 def run(log_queue, store_queue, metricsq):
-    global metrics_queue
+    global metrics_queue, engine
 
     batch = []
     currents = []
@@ -499,6 +499,8 @@ def run(log_queue, store_queue, metricsq):
     
     last_collect_metrics = time.time()
     
+    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+
     while True:
             
             try:
@@ -560,8 +562,7 @@ def run(log_queue, store_queue, metricsq):
                 log.error(f'fail store value: {item}, error: {e}')
         
 
-def batch_write(batch):
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+def batch_write(batch):    
     with Session(engine) as session:
         start_time = time.time()
         try:
