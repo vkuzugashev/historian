@@ -131,6 +131,8 @@ def send_history_batch(last_id: int) -> int:
                         value  = time.time() - start_time
                     )
                 )
+            
+            return last_id
         
         except KeyboardInterrupt:
             raise
