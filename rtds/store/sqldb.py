@@ -498,7 +498,7 @@ def run(log_queue, store_queue, metricsq):
         metrics_queue = metricsq
     
     last_collect_metrics = time.time()
-    
+
     engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
 
     while True:
@@ -568,7 +568,7 @@ def batch_write(batch):
         try:
             session.bulk_save_objects(batch)
             session.commit()
-            log.debug(f'success stored batch: {len(batch)}')
+            log.info(f'success stored batch: {len(batch)}')
             if metrics_queue:
                 metrics_queue.put(
                     metrics.Metric(
