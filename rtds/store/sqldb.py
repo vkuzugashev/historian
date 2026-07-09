@@ -431,9 +431,9 @@ def delete_old_history():
                 session.commit()
                 
                 if deleted_count > 0:
-                    log.info(f'deleted old history: {deleted_count} rows, pid {os.getpid()}')
+                    log.debug(f'deleted old history: {deleted_count} rows, pid {os.getpid()}')
                 else:
-                    log.info(f'no old history, pid {os.getpid()}')
+                    log.debug(f'no old history, pid {os.getpid()}')
 
                 if metrics_queue:
                     metrics_queue.put(
@@ -562,7 +562,7 @@ def run(log_queue, store_queue, metricsq):
                     delete_old_history()
                     
             except KeyboardInterrupt:
-                log.info('store process stopped')
+                log.warn('store process stopped')
                 break
             except Exception as e:
                 log.error(f'fail store value: {item}, error: {e}')
@@ -575,7 +575,7 @@ def batch_write(batch):
         try:
             session.bulk_save_objects(batch)
             session.commit()
-            log.info(f'success stored batch: {len(batch)}')
+            log.debug(f'success stored batch: {len(batch)}')
             if metrics_queue:
                 metrics_queue.put(
                     metrics.Metric(
