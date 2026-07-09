@@ -1,3 +1,4 @@
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError
 from typing import Optional, Iterable
 from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
@@ -106,18 +107,59 @@ def store(items: Iterable[HistoryMessage]):
     batch_write(batch)        
 
 def batch_write(batch):
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
-    with Session(engine) as session:
+    """Запись батча в БД с повторными попытками"""
+    if not batch:
+        log.warning('Empty batch, nothing to store')
+        return
+    
+    max_retries = 3
+    retry_delay = 0.5  # секунды
+    
+    for attempt in range(max_retries):
         start_time = time.time()
+        session = None
         try:
+            session = Session(engine)
             session.bulk_save_objects(batch)
             session.commit()
-            log.debug(f'success stored batch: {len(batch)}')
-            metrics.STORE_DURATION.labels('batch_write','ok').observe(time.time() - start_time)
+            
+            log.debug(f'Successfully stored batch: {len(batch)} records')
+            metrics.STORE_DURATION.labels('batch_write', 'ok').observe(time.time() - start_time)
+            return  # Успешно завершили
+            
+        except IntegrityError as e:
+            # Ошибка целостности данных (дубликаты, внешние ключи и т.д.)
+            log.error(f'Integrity error storing batch: {len(batch)}, error: {e}')
+            metrics.STORE_DURATION.labels('batch_write', 'integrity_error').observe(time.time() - start_time)
+            # Такую ошибку повторять бесполезно - выходим
+            break
+            
+        except OperationalError as e:
+            # Временная ошибка (сеть, БД перезагружается, таймаут)
+            log.warning(f'Operational error (attempt {attempt + 1}/{max_retries}): {e}')
+            if attempt == max_retries - 1:
+                log.error(f'Failed to store batch after {max_retries} attempts')
+                metrics.STORE_DURATION.labels('batch_write', 'operational_error').observe(time.time() - start_time)
+            else:
+                time.sleep(retry_delay * (attempt + 1))  # Экспоненциальная задержка
+                continue
+                
+        except SQLAlchemyError as e:
+            # Другие ошибки SQLAlchemy
+            log.error(f'SQLAlchemy error storing batch: {len(batch)}, error: {e}')
+            metrics.STORE_DURATION.labels('batch_write', 'sql_error').observe(time.time() - start_time)
+            break
+            
         except Exception as e:
-            log.error(f'fail store batch: {len(batch)}, error: {e}')
-            metrics.STORE_DURATION.labels('batch_write','error').observe(time.time() - start_time)
-
+            # Непредвиденная ошибка
+            log.error(f'Unexpected error storing batch: {len(batch)}, error: {e}', exc_info=True)
+            metrics.STORE_DURATION.labels('batch_write', 'unknown_error').observe(time.time() - start_time)
+            break
+            
+        finally:
+            if session:
+                session.close()
+                
 if __name__ == '__main__':
     print('DB_URL=',DB_URL)
     engine = create_engine(DB_URL, echo=True)
