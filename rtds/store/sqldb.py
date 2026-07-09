@@ -25,6 +25,7 @@ SQL_ENGINE_ECHO = os.getenv('STORE_SQL_ENGINE_ECHO', 'false').lower() in ('true'
 DB_URL = os.getenv('STORE_DB_URL','sqlite:///data/history.db')
 
 metrics_queue = None
+engine = None
 
 class Base(DeclarativeBase):
     pass
@@ -87,8 +88,15 @@ class State(Base):
     value: Mapped[Optional[str]] = mapped_column(String(100))    
     description: Mapped[Optional[str]] = mapped_column(String(500))    
 
+
+def get_engine():
+    global engine
+    if not engine:
+        engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    return engine
+
 def set_connectors(connectors:dict):
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session: 
         for item in connectors.values():
             log.debug(f'save connector item: {item}')
@@ -106,7 +114,7 @@ def set_connectors(connectors:dict):
             session.commit()
 
 def set_tags(tags:dict):
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session: 
         for item in tags.values():
             log.debug(f'save tag item: {item}')
@@ -127,7 +135,7 @@ def set_tags(tags:dict):
             session.commit()
 
 def set_scripts(scripts:dict):
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session: 
         for item in scripts.values():
             log.debug(f'save script item: {item}')
@@ -152,7 +160,7 @@ def get_config(server):
     connector_infos = {}
     scripts = {}
 
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session:
         for item in session.scalars(select(Tag)).all():
             tag = DTag(name=item.id, 
@@ -197,7 +205,7 @@ def set_config(connectors, tags, scripts):
     """
     Сохранить конфигурацию в БД
     """
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
 
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)    
@@ -220,7 +228,7 @@ def export_config():
     connectors = {}
     scripts = {}
 
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session:
         for item in session.scalars(select(Tag)).all():
             tag = { 
@@ -271,7 +279,7 @@ def get_history(start_time, size):
         else:
             start_time = datetime.now(timezone.utc) - timedelta(days=1)
 
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session:
         if start_time:
             query = (
@@ -300,7 +308,7 @@ def get_current():
     """
     Получить текущие значения тегов
     """
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session:
         query = (
             select(Current, Tag)
@@ -322,8 +330,7 @@ def get_current():
             }
 
 def set_state(connectors, tags, scripts):
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
-    
+    engine = get_engine()    
     with Session(engine) as session:
         # удалить старые записи
         session.query(State).delete()
@@ -368,7 +375,7 @@ def get_state():
     """
     Получить текущие состояние системы
     """
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session:
         query = select(State)
         for state in session.scalars(query).all():
@@ -380,17 +387,17 @@ def get_state():
             }
 
 def init_db(log_queue=None):
-    global log
+    global log, engine
 
     log = logger.get_logger('store', log_queue)
 
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     Base.metadata.create_all(engine)
     log.info('database initialized')
 
 def delete_old_history():
     if STORE_HISTORY_HOURS:
-        engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+        engine = get_engine()
         with Session(engine) as session:
         
             start_time = time.time()
@@ -447,7 +454,7 @@ def delete_old_history():
                     )
 
 def clear_config():
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     log.info('database initialized') 
@@ -456,7 +463,7 @@ def collect_store_metrics():
     metrics.collect_process_metrics('store', metrics_queue)
 
     if metrics_queue:
-        engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+        engine = get_engine()
         with Session(engine) as session:
             query = (
                 select(func.count())
@@ -485,7 +492,7 @@ def collect_store_metrics():
             log.warning(f'Fail get store size {e}')
         
 def run(log_queue, store_queue, metricsq):
-    global metrics_queue, engine
+    global metrics_queue
 
     batch = []
     currents = []
@@ -497,8 +504,6 @@ def run(log_queue, store_queue, metricsq):
         metrics_queue = metricsq
     
     last_collect_metrics = time.time()
-
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
 
     while True:
             
@@ -561,7 +566,8 @@ def run(log_queue, store_queue, metricsq):
                 log.error(f'fail store value: {item}, error: {e}')
         
 
-def batch_write(batch):    
+def batch_write(batch):
+    engine = get_engine()    
     with Session(engine) as session:
         start_time = time.time()
         try:
@@ -588,7 +594,7 @@ def batch_write(batch):
                 )
 
 def currents_write(items):
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session:
         start_time = time.time()
         try:

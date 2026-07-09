@@ -31,12 +31,18 @@ engine = None
 producer = None
 shared_metrics_queue = None
 
+def get_engine():
+    global engine
+    if not engine:
+        engine = create_engine(DB_URL, echo=STORE_SQL_ENGINE_ECHO)
+    return engine
+
 def init():
-    global engine, producer
+    global producer
     # Создаём engine и producer
     if not engine:
         log.info('create engine ...')
-        engine = create_engine(DB_URL, echo=STORE_SQL_ENGINE_ECHO)
+        _ = get_engine()
         log.info('engine created success')
     if not producer:        
         log.info('creating producer ...')
@@ -64,12 +70,13 @@ def send_history_batch(last_id: int) -> int:
             if last_id < 0:
                 # Получаем последний отправленный ID из State
                 state = session.execute(
-                    select(State).where(State.id=='producer_last_id')).scalar_one_or_none()
+                    select(State).where(State.id=='producer_last_id')
+                    ).scalar_one_or_none()
                 if not state:
-                    log.info("State record not found!")
+                    log.info("State record for producer_last_id not found, set last_id=0!")
                     last_id = 0
                 else:
-                    log.info(f"State record found: {state.value}")
+                    log.info(f"State record for producer_last_id found: last_id={state.value}")
                     last_id = int(state.value)
             
             log.info(f"Fetching history records after ID: {last_id}")
