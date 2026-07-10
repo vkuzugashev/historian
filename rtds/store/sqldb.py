@@ -396,6 +396,12 @@ def init_db(log_queue=None):
     log = logger.get_logger('store', log_queue)
 
     engine = get_engine()
+    # 🔑 Включаем WAL (жизненно важно!)
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("PRAGMA journal_mode=WAL"))
+        conn.execute(text("PRAGMA synchronous=NORMAL"))  # баланс скорости и надёжности
+        conn.commit()
     Base.metadata.create_all(engine)
     log.info('database initialized')
 
