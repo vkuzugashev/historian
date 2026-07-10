@@ -93,7 +93,7 @@ def send_history_batch(last_id: int) -> int:
 
             if not rows:
                 log.debug("No new history records to send.")
-                time.sleep(1)
+                time.sleep(0.1)
                 return last_id
 
             # Подготовка данных для Kafka
