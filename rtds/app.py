@@ -111,10 +111,10 @@ def metrics_run(log_queue, metrics_queue):
     except Exception as e:
         log.error(f'metrics process stoped, error: {e}')
 
-def producer_run(log_queue, metrics_queue):
+def producer_run(log_queue, metrics_queue, store_queue):
     log.info('producer process started')
     try:
-        producer.run(log_queue, metrics_queue)
+        producer.run(log_queue, metrics_queue, store_queue)
     except Exception as e:
         log.error(f'producer process stoped, error: {e}')
 
