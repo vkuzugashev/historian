@@ -1,7 +1,7 @@
 # producer/history_to_kafka.py
 import os, sys
 import time
-from sqlalchemy import create_engine, select
+from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from kafka import KafkaProducer
@@ -27,8 +27,8 @@ KAFKA_BOOTSTRAP_SERVERS = [host.strip() for host in os.getenv('KAFKA_BOOTSTRAP_S
 KAFKA_TOPIC = os.getenv('KAFKA_TOPIC','history_data')
 BATCH_SIZE = int(os.getenv('KAFKA_BATCH_SIZE', '100'))  # Количество записей в одном пакете
 
-engine = None
-producer = None
+engine: Engine = None
+producer: KafkaProducer = None
 shared_metrics_queue = None
 
 def get_engine():
@@ -55,6 +55,7 @@ def init():
 def close_resources():
     if producer:
         log.info('Closing resources...')
+        producer.flush()
         producer.close()
 
 def send_history_batch(last_id: int) -> int:
@@ -64,9 +65,8 @@ def send_history_batch(last_id: int) -> int:
     """
     engine = get_engine()
     with Session(engine) as session:
+        start_time = time.time()
         try:
-            start_time = time.time()
-    
             if last_id < 0:
             # Получаем последний отправленный ID из State
                 state = session.execute(
@@ -118,7 +118,6 @@ def send_history_batch(last_id: int) -> int:
             # Отправка в Kafka
             log.debug(f'Sending message: count={len(messages)}')
             producer.send(KAFKA_TOPIC, value=messages).add_callback(success_callback).add_errback(error_callback)
-            producer.flush()  # Ждём подтверждения отправки
             
             last_id = max_id
             log.debug(f"Sent {len(messages)} history records to Kafka. Last ID: {last_id}")
@@ -163,7 +162,7 @@ def success_callback(records):
     log.debug(f"Kafka delivery successful: partition={records.partition}, offset={records.offset}")
 
 def error_callback(exception):
-    log.debug(f"Failed to deliver Kafka message: {exception}")
+    log.error(f"Failed to deliver Kafka message: {exception}")
 
 def run(log_queue=None, metrics_queue=None):    # Start up the server to expose the metrics.    
     global log, shared_metrics_queue
