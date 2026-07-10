@@ -7,9 +7,11 @@ from datetime import datetime, timedelta, timezone
 import sys, os
 from dotenv import load_dotenv
 
+
 sys.path.extend(['.', '..'])
 
 from models.tag import Tag as DTag, TagType, TagValue, get_tag_type, get_tag_value
+from models.producer_last_id import ProducerLastId
 from connectors.connector_info import ConnectorInfo
 from scripts.script import Script as DScript
 from loggers import logger
@@ -522,45 +524,49 @@ def run(log_queue, store_queue, metricsq):
 
                 item = store_queue.get()
             
-                if not isinstance(item, TagValue):
+                if not isinstance(item, TagValue) or not isinstance(item, ProducerLastId):
                     log.warning(f'Unsupport type: {item}')
                     continue
                 
-                if item.is_log:
-                    history = History(
-                        tag_id=item.name,
-                        tag_time=item.update_time,
-                        status=item.status,
-                        bool_value = item.value if item.type_==TagType.BOOL else None,
-                        int_value = item.value if item.type_==TagType.INT else None,
-                        float_value = item.value if item.type_==TagType.FLOAT else None,
-                        var_value = ','.join([str(a) for a in item.value]) if item.type_ in [TagType.DATETIME, TagType.STR, TagType.ARRAY] else None                
-                    )                    
-                    batch.append(history)                    
+                if isinstance(item, TagValue):
+                    if item.is_log:
+                        history = History(
+                            tag_id=item.name,
+                            tag_time=item.update_time,
+                            status=item.status,
+                            bool_value = item.value if item.type_==TagType.BOOL else None,
+                            int_value = item.value if item.type_==TagType.INT else None,
+                            float_value = item.value if item.type_==TagType.FLOAT else None,
+                            var_value = ','.join([str(a) for a in item.value]) if item.type_ in [TagType.DATETIME, TagType.STR, TagType.ARRAY] else None                
+                        )                    
+                        batch.append(history)                    
                     
-                current = {
-                    "tag_id": item.name,
-                    "tag_time": item.update_time,
-                    "status": item.status,
-                    "bool_value": item.value if item.type_==TagType.BOOL else None,
-                    "int_value": item.value if item.type_==TagType.INT else None,
-                    "float_value": item.value if item.type_==TagType.FLOAT else None,
-                    "var_value": ','.join([str(a) for a in item.value]) if item.type_ in [TagType.DATETIME, TagType.STR, TagType.ARRAY] else None
-                }                
-                currents.append(current)
+                    current = {
+                        "tag_id": item.name,
+                        "tag_time": item.update_time,
+                        "status": item.status,
+                        "bool_value": item.value if item.type_==TagType.BOOL else None,
+                        "int_value": item.value if item.type_==TagType.INT else None,
+                        "float_value": item.value if item.type_==TagType.FLOAT else None,
+                        "var_value": ','.join([str(a) for a in item.value]) if item.type_ in [TagType.DATETIME, TagType.STR, TagType.ARRAY] else None
+                    }                
+                    currents.append(current)
 
-                if len(batch) >= BATCH_SIZE or store_queue.empty():
-                    batch_write(batch)                        
-                    batch = []
+                    if len(batch) >= BATCH_SIZE or store_queue.empty():
+                        batch_write(batch)                        
+                        batch = []
+
+                    if len(currents) >= BATCH_SIZE or store_queue.empty():
+                        currents_write(currents)                        
+                        currents = []
+
+                    # удалить старые записи из history
+                    if len(batch) >= BATCH_SIZE or len(currents) >= BATCH_SIZE or store_queue.empty():
+                        delete_old_history()
                 
-                if len(currents) >= BATCH_SIZE or store_queue.empty():
-                    currents_write(currents)                        
-                    currents = []
+                if isinstance(item, ProducerLastId):
+                    write_producer_last_id(item.lastId)
 
-                # удалить старые записи из history
-                if len(batch) >= BATCH_SIZE or len(currents) >= BATCH_SIZE or store_queue.empty():
-                    delete_old_history()
-                    
             except KeyboardInterrupt:
                 log.warn('store process stopped')
                 break
@@ -638,6 +644,19 @@ def currents_write(items):
                         value   = time.time() - start_time
                     )
                 )
+
+def write_producer_last_id(lastId):
+    engine = get_engine()
+    with Session(engine) as session:
+        # Обновляем State
+        # Атомарный UPSERT для всех записей
+        stmt = sqlite_insert(State).values({'id':'producer_last_id', 'value': f'{lastId}'})
+        on_conflict_stmt = stmt.on_conflict_do_update(
+            index_elements=[State.id], set_={"value": stmt.excluded.value, "description": "Last sended id to kafka"}
+        )            
+        session.execute(on_conflict_stmt)
+        session.commit()
+        log.debug(f"Updated state producer_last_id={lastId}")
 
 if __name__ == '__main__':    
     engine = create_engine(DB_URL, echo=True)

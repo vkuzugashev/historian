@@ -3,16 +3,17 @@ import os, sys
 import time
 from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from kafka import KafkaProducer
 import json
 from dotenv import load_dotenv
+
 
 
 sys.path.extend(['.','..'])
 
 from loggers import logger
 from store.sqldb import History, State, Tag
+from models.producer_last_id import ProducerLastId
 from metrics import server as metrics
 
 load_dotenv()
@@ -121,17 +122,7 @@ def send_history_batch(last_id: int) -> int:
             
             last_id = max_id
             log.debug(f"Sent {len(messages)} history records to Kafka. Last ID: {last_id}")
-            
-            # Обновляем State
-            # Атомарный UPSERT для всех записей
-            stmt = sqlite_insert(State).values({'id':'producer_last_id', 'value': f'{last_id}'})
-            on_conflict_stmt = stmt.on_conflict_do_update(
-                index_elements=[State.id], set_={"value": stmt.excluded.value, "description": "Last sended id to kafka"}
-            )            
-            session.execute(on_conflict_stmt)
-            session.commit()
-            log.debug(f"Updated state producer_last_id={last_id}")
-            
+                        
             if shared_metrics_queue:
                 shared_metrics_queue.put(
                     metrics.Metric(
@@ -146,7 +137,6 @@ def send_history_batch(last_id: int) -> int:
         except KeyboardInterrupt:
             raise
         except Exception as e:
-            session.rollback()
             log.error(f"Error sending history batch: {e}", exc_info=True)
             if shared_metrics_queue:
                 shared_metrics_queue.put(
@@ -164,7 +154,7 @@ def success_callback(records):
 def error_callback(exception):
     log.error(f"Failed to deliver Kafka message: {exception}")
 
-def run(log_queue=None, metrics_queue=None):    # Start up the server to expose the metrics.    
+def run(log_queue=None, metrics_queue=None, store_queue=None):    # Start up the server to expose the metrics.    
     global log, shared_metrics_queue
 
     if metrics_queue:
@@ -180,7 +170,13 @@ def run(log_queue=None, metrics_queue=None):    # Start up the server to expose 
 
     while True:        
         try:
-            last_id = send_history_batch(last_id)
+            result_id = send_history_batch(last_id)
+            
+            if result_id > last_id:
+                last_id = result_id
+                if store_queue:
+                    store_queue.put(ProducerLastId(lastId=last_id))
+
             if metrics_queue:
                 if time.time() - last_collect_metrics > 60:
                     last_collect_metrics = time.time()

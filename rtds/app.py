@@ -237,7 +237,7 @@ def run():
         if METRICS_ENABLED:
             start_process(process_name='metrics', target=metrics_run, args=(log_queue, metrics_queue,))  
         if KAFKA_ENABLED:
-            start_process(process_name='producer', target=producer_run, args=(log_queue, metrics_queue,))  
+            start_process(process_name='producer', target=producer_run, args=(log_queue, metrics_queue, store_queue,))  
 
         start_connectors(log_queue, metrics_queue)
         log.info('wait 5 sec ...')
