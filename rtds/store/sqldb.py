@@ -524,7 +524,7 @@ def run(log_queue, store_queue, metricsq):
 
                 item = store_queue.get()
             
-                if not isinstance(item, TagValue) or not isinstance(item, ProducerLastId):
+                if not isinstance(item, TagValue) and not isinstance(item, ProducerLastId):
                     log.warning(f'Unsupport type: {item}')
                     continue
                 
