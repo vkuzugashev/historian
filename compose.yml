@@ -58,9 +58,10 @@ services:
       KAFKA_LOG_SEGMENT_MS: 3600000      # 1 час    
       # Максимальный размер сообщения
       KAFKA_MESSAGE_MAX_BYTES: 1048576   # 1 МБ
-    
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_DATA_DIR: /var/lib/kafka/data
     volumes:
-      - kafka_data:/kafka
+      - kafka_data:/var/lib/kafka/data
     deploy:
       resources:
         limits:
