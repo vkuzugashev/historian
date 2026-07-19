@@ -1,17 +1,18 @@
-import multiprocessing as mp
 import time
 from typing import Optional
 from sqlalchemy import create_engine, String, Integer, Boolean, Float, DateTime, Text, func, select, delete, and_
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from datetime import datetime, timedelta, timezone
-import sys, os, psutil
+import sys, os
 from dotenv import load_dotenv
+
 
 sys.path.extend(['.', '..'])
 
 from models.tag import Tag as DTag, TagType, TagValue, get_tag_type, get_tag_value
-from connectors.connector_factory import get_connector
+from models.producer_last_id import ProducerLastId
+from connectors.connector_info import ConnectorInfo
 from scripts.script import Script as DScript
 from loggers import logger
 from metrics import server as metrics
@@ -26,6 +27,7 @@ SQL_ENGINE_ECHO = os.getenv('STORE_SQL_ENGINE_ECHO', 'false').lower() in ('true'
 DB_URL = os.getenv('STORE_DB_URL','sqlite:///data/history.db')
 
 metrics_queue = None
+engine = None
 
 class Base(DeclarativeBase):
     pass
@@ -88,8 +90,15 @@ class State(Base):
     value: Mapped[Optional[str]] = mapped_column(String(100))    
     description: Mapped[Optional[str]] = mapped_column(String(500))    
 
+
+def get_engine():
+    global engine
+    if not engine:
+        engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    return engine
+
 def set_connectors(connectors:dict):
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session: 
         for item in connectors.values():
             log.debug(f'save connector item: {item}')
@@ -97,7 +106,7 @@ def set_connectors(connectors:dict):
                 id=item.name,
                 cycle=item.cycle,
                 is_read_only=item.is_read_only,
-                connection_string=";".join([f"{k}={v}" for k, v in item.connection_string.items()]),
+                connection_string=item.connection_string,
                 description=item.description,
                 updated_at=datetime.now(timezone.utc)
             )
@@ -107,7 +116,7 @@ def set_connectors(connectors:dict):
             session.commit()
 
 def set_tags(tags:dict):
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session: 
         for item in tags.values():
             log.debug(f'save tag item: {item}')
@@ -128,7 +137,7 @@ def set_tags(tags:dict):
             session.commit()
 
 def set_scripts(scripts:dict):
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session: 
         for item in scripts.values():
             log.debug(f'save script item: {item}')
@@ -150,10 +159,10 @@ def get_config(server):
     """
     log.info('loading config from db')
     tags = {}
-    connectors = {}
+    connector_infos = {}
     scripts = {}
 
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session:
         for item in session.scalars(select(Tag)).all():
             tag = DTag(name=item.id, 
@@ -169,18 +178,15 @@ def get_config(server):
             tags[tag.name] = tag
 
         for item in session.scalars(select(Connector)).all():
-            connector = get_connector(name=item.id,
-                                  cycle=item.cycle,
-                                  connection_string=item.connection_string,
-                                  tags=[(key, tag) for key, tag in tags.items() if tag.connector_name==item.id],
-                                  is_read_only=item.is_read_only,
-                                  read_queue=mp.Queue(),
-                                  write_queue=mp.Queue() if item.is_read_only else None,
-                                  log_queue=server.log_queue if server else None,
-                                  metrics_queue=server.metrics_queue if server else None,
-                                  description=item.description
-                                  )
-            connectors[connector.name] = connector
+            connector_info = ConnectorInfo(
+                name=item.id,
+                cycle=item.cycle,
+                connection_string=item.connection_string,
+                tags = [(key, tag) for key, tag in tags.items() if tag.connector_name==item.id],
+                is_read_only=item.is_read_only,
+                description=item.description
+            )
+            connector_infos[item.id] = connector_info
 
         for item in session.scalars(select(Script)).all():
             script = DScript(
@@ -193,15 +199,15 @@ def get_config(server):
             scripts[script.name] = script
 
     # сохраним состояние конфигурации
-    set_state(connectors, tags, scripts)
+    set_state(connector_infos, tags, scripts)
 
-    return connectors, tags, scripts
+    return connector_infos, tags, scripts
 
 def set_config(connectors, tags, scripts):
     """
     Сохранить конфигурацию в БД
     """
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
 
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)    
@@ -224,7 +230,7 @@ def export_config():
     connectors = {}
     scripts = {}
 
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session:
         for item in session.scalars(select(Tag)).all():
             tag = { 
@@ -275,7 +281,7 @@ def get_history(start_time, size):
         else:
             start_time = datetime.now(timezone.utc) - timedelta(days=1)
 
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session:
         if start_time:
             query = (
@@ -304,7 +310,7 @@ def get_current():
     """
     Получить текущие значения тегов
     """
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session:
         query = (
             select(Current, Tag)
@@ -326,11 +332,12 @@ def get_current():
             }
 
 def set_state(connectors, tags, scripts):
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
-    
+    engine = get_engine()    
     with Session(engine) as session:
-        # удалить старые записи
-        session.query(State).delete()
+        
+        # удалить старые записи (connectors, tags, scripts, config_time)
+        stmt = delete(State).where(State.id.in_(['connectors', 'tags', 'scripts', 'config_time']))
+        session.execute(stmt)
 
         if connectors:
             count = len(connectors)
@@ -372,7 +379,7 @@ def get_state():
     """
     Получить текущие состояние системы
     """
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session:
         query = select(State)
         for state in session.scalars(query).all():
@@ -384,17 +391,23 @@ def get_state():
             }
 
 def init_db(log_queue=None):
-    global log
+    global log, engine
 
     log = logger.get_logger('store', log_queue)
 
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
+    # 🔑 Включаем WAL (жизненно важно!)
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("PRAGMA journal_mode=WAL"))
+        conn.execute(text("PRAGMA synchronous=NORMAL"))  # баланс скорости и надёжности
+        conn.commit()
     Base.metadata.create_all(engine)
     log.info('database initialized')
 
 def delete_old_history():
     if STORE_HISTORY_HOURS:
-        engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+        engine = get_engine()
         with Session(engine) as session:
         
             start_time = time.time()
@@ -426,9 +439,9 @@ def delete_old_history():
                 session.commit()
                 
                 if deleted_count > 0:
-                    log.debug(f'deleted old history: {deleted_count} rows')
+                    log.debug(f'deleted old history: {deleted_count} rows, pid {os.getpid()}')
                 else:
-                    log.debug(f'no old history')
+                    log.debug(f'no old history, pid {os.getpid()}')
 
                 if metrics_queue:
                     metrics_queue.put(
@@ -451,7 +464,7 @@ def delete_old_history():
                     )
 
 def clear_config():
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     log.info('database initialized') 
@@ -460,7 +473,7 @@ def collect_store_metrics():
     metrics.collect_process_metrics('store', metrics_queue)
 
     if metrics_queue:
-        engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+        engine = get_engine()
         with Session(engine) as session:
             query = (
                 select(func.count())
@@ -501,7 +514,7 @@ def run(log_queue, store_queue, metricsq):
         metrics_queue = metricsq
     
     last_collect_metrics = time.time()
-    
+
     while True:
             
             try:
@@ -517,54 +530,58 @@ def run(log_queue, store_queue, metricsq):
 
                 item = store_queue.get()
             
-                if not isinstance(item, TagValue):
+                if not isinstance(item, TagValue) and not isinstance(item, ProducerLastId):
                     log.warning(f'Unsupport type: {item}')
                     continue
                 
-                if item.is_log:
-                    history = History(
-                        tag_id=item.name,
-                        tag_time=item.update_time,
-                        status=item.status,
-                        bool_value = item.value if item.type_==TagType.BOOL else None,
-                        int_value = item.value if item.type_==TagType.INT else None,
-                        float_value = item.value if item.type_==TagType.FLOAT else None,
-                        var_value = ','.join([str(a) for a in item.value]) if item.type_ in [TagType.DATETIME, TagType.STR, TagType.ARRAY] else None                
-                    )                    
-                    batch.append(history)                    
+                if isinstance(item, TagValue):
+                    if item.is_log:
+                        history = History(
+                            tag_id=item.name,
+                            tag_time=item.update_time,
+                            status=item.status,
+                            bool_value = item.value if item.type_==TagType.BOOL else None,
+                            int_value = item.value if item.type_==TagType.INT else None,
+                            float_value = item.value if item.type_==TagType.FLOAT else None,
+                            var_value = ','.join([str(a) for a in item.value]) if item.type_ in [TagType.DATETIME, TagType.STR, TagType.ARRAY] else None                
+                        )                    
+                        batch.append(history)                    
                     
-                current = {
-                    "tag_id": item.name,
-                    "tag_time": item.update_time,
-                    "status": item.status,
-                    "bool_value": item.value if item.type_==TagType.BOOL else None,
-                    "int_value": item.value if item.type_==TagType.INT else None,
-                    "float_value": item.value if item.type_==TagType.FLOAT else None,
-                    "var_value": ','.join([str(a) for a in item.value]) if item.type_ in [TagType.DATETIME, TagType.STR, TagType.ARRAY] else None
-                }                
-                currents.append(current)
+                    current = {
+                        "tag_id": item.name,
+                        "tag_time": item.update_time,
+                        "status": item.status,
+                        "bool_value": item.value if item.type_==TagType.BOOL else None,
+                        "int_value": item.value if item.type_==TagType.INT else None,
+                        "float_value": item.value if item.type_==TagType.FLOAT else None,
+                        "var_value": ','.join([str(a) for a in item.value]) if item.type_ in [TagType.DATETIME, TagType.STR, TagType.ARRAY] else None
+                    }                
+                    currents.append(current)
 
-                if len(batch) >= BATCH_SIZE or store_queue.empty():
-                    batch_write(batch)                        
-                    batch = []
+                    if len(batch) >= BATCH_SIZE or store_queue.empty():
+                        batch_write(batch)                        
+                        batch = []
+
+                    if len(currents) >= BATCH_SIZE or store_queue.empty():
+                        currents_write(currents)                        
+                        currents = []
+
+                    # удалить старые записи из history
+                    if len(batch) >= BATCH_SIZE or len(currents) >= BATCH_SIZE or store_queue.empty():
+                        delete_old_history()
                 
-                if len(currents) >= BATCH_SIZE or store_queue.empty():
-                    currents_write(currents)                        
-                    currents = []
+                if isinstance(item, ProducerLastId):
+                    write_producer_last_id(item.lastId)
 
-                # удалить старые записи из history
-                if len(batch) >= BATCH_SIZE or len(currents) >= BATCH_SIZE or store_queue.empty():
-                    delete_old_history()
-                    
             except KeyboardInterrupt:
-                log.info('store process stopped')
+                log.warn('store process stopped')
                 break
             except Exception as e:
                 log.error(f'fail store value: {item}, error: {e}')
         
 
 def batch_write(batch):
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()    
     with Session(engine) as session:
         start_time = time.time()
         try:
@@ -591,7 +608,7 @@ def batch_write(batch):
                 )
 
 def currents_write(items):
-    engine = create_engine(DB_URL, echo=SQL_ENGINE_ECHO)
+    engine = get_engine()
     with Session(engine) as session:
         start_time = time.time()
         try:
@@ -633,6 +650,19 @@ def currents_write(items):
                         value   = time.time() - start_time
                     )
                 )
+
+def write_producer_last_id(lastId):
+    engine = get_engine()
+    with Session(engine) as session:
+        # Обновляем State
+        # Атомарный UPSERT для всех записей
+        stmt = sqlite_insert(State).values({'id':'producer_last_id', 'value': f'{lastId}'})
+        on_conflict_stmt = stmt.on_conflict_do_update(
+            index_elements=[State.id], set_={"value": stmt.excluded.value, "description": "Last sended id to kafka"}
+        )            
+        session.execute(on_conflict_stmt)
+        session.commit()
+        log.debug(f"Updated state producer_last_id={lastId}")
 
 if __name__ == '__main__':    
     engine = create_engine(DB_URL, echo=True)

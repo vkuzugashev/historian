@@ -1,13 +1,10 @@
 from multiprocessing import Queue
 import queue
-from dataclasses import dataclass
 from pyModbusTCP.client import ModbusClient
 from loggers import logger
 from models.tag import TagType, Tag, TagValue
 from connectors.connector_abc import ConnectorABC
 
-
-@dataclass
 class ConnectorModbus(ConnectorABC):
     '''
     ConnectorModbus v0.1
@@ -100,22 +97,27 @@ but got:
         try:
             sl = self._source_parse(source)
         except ValueError as e:
-            self.log.error(e.message)
+            self.log.error(f'Fail parse source: {source}, {e}')
             return None
-        if sl[0] == 'C':
-            return self._read_coils(sl[1], sl[2])
-        elif sl[0] == 'DI':
-            return self._read_discrete_inputs(sl[1], sl[2])
-        elif sl[0] == 'RI':
-            return self._read_input_registers(sl[1], sl[2])
-        elif sl[0] == 'RH':
-            return self._read_holding_registers(sl[1], sl[2])
+        try:
+            if sl[0] == 'C':
+                return self._read_coils(sl[1], sl[2])
+            elif sl[0] == 'DI':
+                return self._read_discrete_inputs(sl[1], sl[2])
+            elif sl[0] == 'RI':
+                return self._read_input_registers(sl[1], sl[2])
+            elif sl[0] == 'RH':
+                return self._read_holding_registers(sl[1], sl[2])
+        except Exception as e:
+            return None
         
     def open(self):
+        self.log.debug(f'Opening connection to {self.host}:{self.port}')
         if not self.auto_open:
             self.client.open()
 
     def close(self):
+        self.log.debug(f'Closing connection to {self.host}:{self.port}')
         if not self.auto_close:
             self.client.close()
         
@@ -128,14 +130,14 @@ but got:
             if result_list is None:
                 value = None
                 status=-1
-                self.log.error(f'fail read modbus address: {tag.source}')
+                self.log.error(f'fail read modbus address: {key}, {tag.source}')
             elif len(result_list) == 1:
                 value = result_list[0]
             elif len(result_list) > 1:
                 value = result_list
             else:
                 value = result_list
-            self.log.debug(f'read modbus address: {tag.source} and get value: {value}')
+            self.log.debug(f'read modbus address: {key}, {tag.source} and get value: {value}')
             tgv = TagValue(name=key, type_=tag.type_, status=status, value=value)
             self.read_queue.put(tgv)
 

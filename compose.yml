@@ -7,11 +7,14 @@ services:
       POSTGRES_DB: historydb
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 1
+      # Разрешаем установку расширений
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
       - ./historian/store/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./init-scripts:/docker-entrypoint-initdb.d  # Добавляем папку для скриптов инициализации
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -20,7 +23,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 200M  # Жесткий лимит памяти
+          memory: 350M  # Жесткий лимит памяти
         reservations:
           memory: 150M  # Гарантированный минимум (опционально)
 
@@ -40,19 +43,38 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1  # Коэффициент репликации offset-темы
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0  # Задержка начальной балансировки групп потреблени
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+      # === ЖЕСТКИЕ ОГРАНИЧЕНИЯ ===
+      # Время хранения: 4 часа (14400000 миллисекунд)
+      KAFKA_LOG_RETENTION_HOURS: 4
+      KAFKA_LOG_RETENTION_MS: 14400000    
+      # Размер: 100 МБ (100 * 1024 * 1024 = 104857600 байт)
+      KAFKA_LOG_RETENTION_BYTES: 104857600    
+      # Политика очистки: удалять старые сообщения
+      KAFKA_LOG_CLEANUP_POLICY: delete    
+      # Частота проверки (каждую минуту для быстрой реакции)
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 60000    
+      # Размер сегмента (меньше для более частой очистки)
+      KAFKA_LOG_SEGMENT_BYTES: 10485760  # 10 МБ
+      KAFKA_LOG_SEGMENT_MS: 3600000      # 1 час    
+      # Максимальный размер сообщения
+      KAFKA_MESSAGE_MAX_BYTES: 1048576   # 1 МБ
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_DATA_DIR: /var/lib/kafka/data
     volumes:
-      - kafka_data:/kafka
+      - kafka_data:/var/lib/kafka/data
     deploy:
       resources:
         limits:
-          memory: 600M  # Жесткий лимит памяти
+          memory: 750M  # Жесткий лимит памяти
         reservations:
           memory: 500M  # Гарантированный минимум (опционально)
     restart: unless-stopped
 
   # === Historian Service ===
   historian:
-    build: . 
+    build:
+      context: ./historian
+      dockerfile: Dockerfile
     env_file:
       - ./historian/.env
     depends_on:
@@ -86,7 +108,9 @@ services:
 
   # === RTDS (Real-Time Data Service) ===
   rtds:
-    build: .
+    build:
+      context: ./rtds
+      dockerfile: Dockerfile
     container_name: historian-rtds
     env_file:
       - ./rtds/.env
@@ -101,7 +125,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 200M  # Жесткий лимит памяти
+          memory: 350M  # Жесткий лимит памяти
         reservations:
           memory: 150M  # Гарантированный минимум (опционально)
     restart: unless-stopped
@@ -118,8 +142,16 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=5d'    # Хранить данные 30 дней
+      - '--storage.tsdb.retention.size=500MB'   # Максимальный размер хранилища
       - '--web.console.libraries=/etc/prometheus/consoles'
       - '--web.console.templates=/etc/prometheus/consoles'
+    deploy:
+      resources:
+        limits:
+          memory: 100M  # Жесткий лимит памяти
+        reservations:
+          memory: 50M  # Гарантированный минимум (опционально)      
     restart: unless-stopped
 
   # === Grafana (опционально) ===

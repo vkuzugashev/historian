@@ -26,7 +26,7 @@ class ConnectorTest(ConnectorABC):
             if tag.source:
                 # Парсим строку источника
                 source_params = dict(map(str.strip, sub.split('=', 1)) for sub in tag.source.split(';') if '=' in sub)
-                func = source_params.get('func').lower()
+                func = source_params.get('func','rnd').lower()
                 period = float(source_params.get('period', 1))
                 scale = float(source_params.get('scale', 1))
                 if func not in ['sin', 'cos', 'sawtooth', 'square', 'rnd', 'line']:
